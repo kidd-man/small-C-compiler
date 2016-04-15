@@ -8,6 +8,8 @@
 
 ;; 変数宣言文: type decls;
 (struct declar (type decls)                            #:transparent)
+;; 配列: <identifer> [ <expression> ];
+(struct array-exp (name size pos)                      #:transparent)
 ;; 関数のプロトタイプ宣言: type name ( parms );
 (struct function-prottype (type name parms)            #:transparent)
 ;; 関数の定義 type fundec(parms)

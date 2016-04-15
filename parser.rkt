@@ -107,7 +107,7 @@
      ((* direct-declarator) (cons (cons $2 $1-start-pos) #t))) ;====
     (direct-declarator
      ((ID) $1) ;====
-     ((ID LBBRA NUM RBBRA) (stx:deref-exp (stx:aop-exp '+ $1 $3 $3-start-pos) $1-start-pos))) ;====
+     ((ID LBBRA NUM RBBRA) (stx:array-exp $1 $3 $1-start-pos))) ;====
     (function-prototype
      ((type-specifier function-declarator SEMI) (stx:function-prottype (cons (if (cdr $2) `(* ,$1) $1) $2-start-pos) (caar $2) (cdar $2)))) ;====
     (function-declarator
