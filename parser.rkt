@@ -92,30 +92,30 @@
      ((function-prototype) $1) ;====
      ((function-definition) $1)) ;====
     (declaration
-     ((type-specifier declarator-list SEMI) (stx:declar (cons $1 $2-start-pos) $2))) ;====
+     ((type-specifier declarator-list SEMI)
+      (map (lambda (type_declr)
+             (if (cddr type_declr)
+                 (stx:declar `(* ,$1) (cadr type_declr))
+                 (stx:declar $1       (cadr type_declr))))
+           (map (lambda (declr-elem) (cons $1 declr-elem)) $2)))) ;====
     (declarator-list
-     ((declarator) `(,(if (cdr $1)
-                          (list (cons '* (cdar $1)) (caar $1))
-                          (car $1)))) ;====
+     ((declarator) `(,$1)) ;====
      ((declarator-list COMMA declarator)
-      (append $1
-              `(,(if (cdr $3)
-                     (list (cons '* (cdar $3)) (caar $3))
-                     (car $3)))))) ;====
+      (append $1 `(,$3)))) ;====
     (declarator
      ((direct-declarator) (cons $1 #f)) ;====
      ((* direct-declarator) (cons (cons $2 $1-start-pos) #t))) ;====
     (direct-declarator
      ((ID) $1) ;====
-     ((ID LBBRA NUM RBBRA) (stx:postfix-exp $1 $3 $1-start-pos))) ;====
+     ((ID LBBRA NUM RBBRA) (stx:deref-exp (stx:aop-exp '+ $1 $3 $3-start-pos) $1-start-pos))) ;====
     (function-prototype
-     ((type-specifier function-declarator SEMI) (stx:function-prottype (cons (if (cdr $2) `(* ,$1) $1) $2-start-pos) (stx:function-declarator-name (car $2)) (stx:function-declarator-parms (car $2))))) ;====
+     ((type-specifier function-declarator SEMI) (stx:function-prottype (cons (if (cdr $2) `(* ,$1) $1) $2-start-pos) (caar $2) (cdar $2)))) ;====
     (function-declarator
-     ((ID LPAR parameter-type-list-opt RPAR) (cons (stx:function-declarator (cons $1 $1-start-pos) $3) #f)) ;====
-     ((* ID LPAR parameter-type-list-opt RPAR) (cons (stx:function-declarator (cons $2 $2-start-pos) $4) #t))) ;====
+     ((ID LPAR parameter-type-list-opt RPAR) (cons (cons (cons $1 $1-start-pos) $3) #f)) ;====
+     ((* ID LPAR parameter-type-list-opt RPAR) (cons (cons (cons $2 $2-start-pos) $4) #t))) ;====
     (function-definition
      ((type-specifier function-declarator compound-statement)
-      (stx:function-definition (cons (if (cdr $2) `(* ,$1) $1) $2-start-pos) (stx:function-declarator-name (car $2)) (stx:function-declarator-parms (car $2)) $3))) ;====
+      (stx:function-definition (cons (if (cdr $2) `(* ,$1) $1) $2-start-pos) (caar $2) (cdar $2) $3))) ;====
     (parameter-type-list-opt
      (() ...) ;====
      ((parameter-type-list) $1)) ;====
@@ -143,7 +143,7 @@
       (stx:while-stmt $3 $5 $1-start-pos)) ;====
      ((FOR LPAR expression-opt SEMI expression-opt
            SEMI expression-opt RPAR statement)
-      (stx:for-stmt $3 $5 $7 $9 $1-start-pos)) ;====
+      `(,$3 ,(stx:while-stmt $5 (append (if (list? $9) $9 `(,$9)) `(,$7)) $1-start-pos))) ;====
      ((RETURN expression-opt SEMI) (stx:return-stmt $2 $1-start-pos))) ;====
     (compound-statement
      ((LBRA declaration-list-opt statement-list-opt RBRA)
@@ -153,7 +153,7 @@
      ((declaration-list) $1)) ;====
     (declaration-list
      ((declaration) `(,$1)) ;====
-     ((declaration-list declaration) (append $1 `(,(cons $2 $2-start-pos))))) ;====
+     ((declaration-list declaration) (append $1 `(,$2)))) ;====
     (statement-list-opt
      (() '()) ;====
      ((statement-list) $1)) ;====
@@ -195,13 +195,13 @@
      ((mult-expr / unary-expr) (stx:aop-exp '/ $1 $3 $2-start-pos))) ;====
     (unary-expr
      ((postfix-expr) $1);====
-     ((- unary-expr) (stx:neg-exp $2 $1-start-pos)) ;====
-     ((& unary-expr) (stx:addr-exp $2 $1-start-pos)) ;====
-     ((* unary-expr) (stx:deref-exp $2 $1-start-pos))) ;====
+     ((- unary-expr) (stx:aop-exp '- 0 $2 $1-start-pos)) ;====
+     ((& unary-expr) (if (stx:deref-exp? $2) (stx:deref-exp-arg $2) (stx:addr-exp $2 $1-start-pos))) ;====
+     ((* unary-expr) (if (stx:addr-exp? $2)  (stx:addr-exp-var $2)  (stx:deref-exp $2 $1-start-pos)))) ;====
     (postfix-expr
      ((primary-expr) $1) ;====
      ((postfix-expr LBBRA expression RBBRA)
-      (stx:postfix-exp $1 $3 $3-start-pos)) ;====
+      (stx:deref-exp (stx:aop-exp '+ $1 $3 $3-start-pos) $1-start-pos)) ;====
      ((ID LPAR argument-expression-list-opt RPAR)
       (stx:call-exp $1 $3 $1-start-pos))) ;====
     (primary-expr
