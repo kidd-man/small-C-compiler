@@ -7,7 +7,7 @@
 ;; declaration/definition
 
 ;; 変数宣言文: type decls;
-(struct declar (type decls)                            #:transparent)
+(struct declar (declrs)                                #:transparent)
 ;; 配列: <identifer> [ <expression> ];
 (struct array-exp (name size pos)                      #:transparent)
 ;; 関数のプロトタイプ宣言: type name ( parms );

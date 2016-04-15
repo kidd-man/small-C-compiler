@@ -94,29 +94,36 @@
      ((function-definition) $1)) ;====
     (declaration
      ((type-specifier declarator-list SEMI)
-      (map (lambda (type_declr)
-             (if (cddr type_declr)
-                 (stx:declar `(* ,$1) (cadr type_declr))
-                 (stx:declar $1       (cadr type_declr))))
-           (map (lambda (declr-elem) (cons $1 declr-elem)) $2)))) ;====
+      (stx:declar (map (lambda (type_declr)
+                         (if (list? (cdr type_declr))
+                             (cons (append (filter (lambda (x) (eq? x '*)) (cdr type_declr)) `(,$1)) (list-ref (cdr type_declr) (- (length (cdr type_declr)) 1)))
+                             (cons $1 (cdr type_declr))))
+                       (map (lambda (declr-elem) (cons $1 declr-elem)) $2))))) ;====
     (declarator-list
      ((declarator) `(,$1)) ;====
      ((declarator-list COMMA declarator)
       (append $1 `(,$3)))) ;====
     (declarator
-     ((direct-declarator) (cons $1 #f)) ;====
-     ((* direct-declarator) (cons (cons $2 $1-start-pos) #t))) ;====
+     ((direct-declarator) $1);(cons $1 #f)) ;====
+     ((* declarator) (append '(*) (if (list? $2) $2 `(,$2)))));(cons (cons $2 $1-start-pos) #t))) ;====
     (direct-declarator
      ((ID) $1) ;====
      ((direct-declarator LBBRA NUM RBBRA) (stx:array-exp $1 $3 $1-start-pos))) ;====
     (function-prototype
-     ((type-specifier function-declarator SEMI) (stx:function-prottype (cons (if (cdr $2) `(* ,$1) $1) $2-start-pos) (caar $2) (cdar $2)))) ;====
+     ((type-specifier function-declarator SEMI)
+      (if (list? $2)
+      (stx:function-prottype (append (filter (lambda (x) (eq? x '*)) (filter (lambda (x) (not (pair? x))) $2)) `(,$1))
+                             (list-ref (filter (lambda (x) (not (pair? x))) $2) (- (length (filter (lambda (x) (not (pair? x))) $2)) 1))
+                             (filter pair? $2))
+      (stx:function-prottype $1 (car $2) (cdr $2)))));(stx:function-prottype (cons (if (cdr $2) `(* ,$1) $1) $2-start-pos) (caar $2) (cdar $2)))) ;====
     (function-declarator
-     ((ID LPAR parameter-type-list-opt RPAR) (cons (cons (cons $1 $1-start-pos) $3) #f)) ;====
-     ((* ID LPAR parameter-type-list-opt RPAR) (cons (cons (cons $2 $2-start-pos) $4) #t))) ;====
+     ((ID LPAR parameter-type-list-opt RPAR) (cons $1 $3));(cons (cons (cons $1 $1-start-pos) $3) #f)) ;====
+     ((* function-declarator) (append '(*) (if (list? $2) $2 `(,$2)))));(cons (cons (cons $2 $2-start-pos) $4) #t))) ;====
     (function-definition
      ((type-specifier function-declarator compound-statement)
-      (stx:function-definition (cons (if (cdr $2) `(* ,$1) $1) $2-start-pos) (caar $2) (cdar $2) $3))) ;====
+      (if (list? $2)
+      (stx:function-definition $1 (filter (lambda (x) (not (pair? x))) $2) (filter pair? $2) $3 );(cons (if (cdr $2) `(* ,$1) $1) $2-start-pos) (caar $2) (cdar $2) $3))) ;====
+      (stx:function-definition $1 (car $2) (cdr $2) $3))))
     (parameter-type-list-opt
      (() ...) ;====
      ((parameter-type-list) $1)) ;====
@@ -125,10 +132,14 @@
      ((parameter-type-list COMMA parameter-declaration)
       (append $1 `(,$3)))) ;====
     (parameter-declaration
-     ((type-specifier parameter-declarator) (cons (cons (if (cdr $2) `(* ,$1) $1) $1-start-pos) (car $2)))) ;====
+     ((type-specifier parameter-declarator) (if (list? $2)
+                                                (cons (cons (append (filter (lambda (x) (eq? x '*)) $2) `(,$1))
+                                                            $1-start-pos)
+                                                      (list-ref $2 (- (length $2) 1)))
+                                                (cons (cons $1 $1-start-pos) $2)))) ;====
     (parameter-declarator
-     ((ID) (cons $1 #f)) ;====
-     ((* ID) (cons $2 #t))) ;====
+     ((ID) $1) ;====
+     ((* parameter-declarator) (append '(*) (if (list? $2) $2 `(,$2))))) ;====
     (type-specifier
      ((INT) 'int) ;====
      ((FLOAT) 'float) ;====
