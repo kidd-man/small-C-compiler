@@ -16,7 +16,7 @@
    & && || =
    SEMI LPAR RPAR COMMA RETURN 
    LBRA RBRA LBBRA RBBRA
-   INT VOID
+   INT FLOAT VOID
    IF ELSE WHILE FOR
    EOF))
 
@@ -64,6 +64,7 @@
    ("while"    (token-WHILE))
    ("for"      (token-FOR))
    ("int"      (token-INT))
+   ("float"    (token-FLOAT))
    ("void"     (token-VOID))
    (number     (token-NUM (string->number lexeme)))
    (identifier (token-ID (string->symbol lexeme)))
@@ -130,6 +131,7 @@
      ((* ID) (cons $2 #t))) ;====
     (type-specifier
      ((INT) 'int) ;====
+     ((FLOAT) 'float) ;====
      ((VOID) 'void)) ;====
     (statement
      ((SEMI) ...) ;====
