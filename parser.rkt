@@ -1,9 +1,11 @@
 #lang racket
+(provide (all-defined-out))
 (require parser-tools/lex
          (prefix-in : parser-tools/lex-sre)
          (prefix-in stx: "syntax.rkt")
          parser-tools/yacc
          )
+
 (define ... (void)) ;; indicates a part to be implemented
 
  
@@ -113,7 +115,7 @@
     (function-prototype
      ((type-specifier function-declarator SEMI)
       (let ((id-param (list-ref $2 (- (length $2) 1))))
-        (stx:function-prottype (append (filter (lambda (x) (eq? x '*)) $2)
+        (stx:function-prototype (append (filter (lambda (x) (eq? x '*)) $2)
                                        `(,$1))
                                (car id-param)
                                (cdr id-param)))))

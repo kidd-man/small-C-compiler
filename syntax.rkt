@@ -11,9 +11,9 @@
 ;; 配列: <identifer> [ <expression> ];
 (struct array-exp (name size pos)                      #:transparent)
 ;; 関数のプロトタイプ宣言: type name ( parms );
-(struct function-prottype (type name parms)            #:transparent)
+(struct function-prototype (type name parms)            #:transparent)
 ;; 関数の定義 type fundec(parms)
-(struct function-definition (type fundec parms body)   #:transparent)
+(struct function-definition (type name parms body)   #:transparent)
 
 
 
