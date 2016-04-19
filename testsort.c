@@ -17,6 +17,7 @@ int main(){
 	num[7] = 5;
 	
 	bubble_sort();
+	i = (1 + 1)*2;
 	
 	for(i = 0; i < 8; i = i+1){
 	  print(num[i]);
@@ -29,7 +30,7 @@ void bubble_sort() {
 	
 	while( improve != 0 ){
 		improve = 0;
-		for(i = 0; i < 7; i = i+1){
+		for(i = 0; i < 7; ++i){
 			if( num[i] > num[i+1] ) {
 				temp = num[i];
 				num[i] = num[i+1];
@@ -41,10 +42,12 @@ void bubble_sort() {
 	}
 }
 
-int *hoge( int art, int *nanana){
+int *hoge( int art, int *banana){
   int *s, t, *u;
   float p;
   int x;
+
+  m = ++p;
 
   return x+2;
 

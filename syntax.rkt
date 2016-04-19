@@ -2,18 +2,16 @@
 ;; (require rackunit)
 (provide (all-defined-out))
 
-(struct program (program exdecl pos)            #:transparent)
-
 ;; declaration/definition
 
 ;; 変数宣言文: type decls;
-(struct declar (declrs)                                #:transparent)
+(struct declar (declrs pos)                            #:transparent)
 ;; 配列: <identifer> [ <expression> ];
 (struct array-exp (name size pos)                      #:transparent)
 ;; 関数のプロトタイプ宣言: type name ( parms );
-(struct function-prototype (type name parms)            #:transparent)
+(struct function-prototype (type name parms)           #:transparent)
 ;; 関数の定義 type fundec(parms)
-(struct function-definition (type name parms body)   #:transparent)
+(struct function-definition (type name parms body)     #:transparent)
 
 
 
@@ -22,13 +20,15 @@
 ;; statement
 
 ;; 条件分岐: if(<exp>) <stmt> else <stmt>
-(struct if-stmt      (test tbody ebody pos)     #:transparent)
+(struct if-stmt      (test tbody ebody pos)         #:transparent)
 ;; 繰り返し: while(<exp>) <stmt>
-(struct while-stmt   (test body pos)            #:transparent)
+(struct while-stmt   (test body pos)                #:transparent)
+;; 繰り返し: do <stmt> while(<exp>);
+(struct do-while-stmt (body test pos)               #:transparent)
 ;;繰り返し: for(<exp-opt>;<exp-opt>;<exp-opt>) <stmt>
-(struct for-stmt (first second third body pos)  #:transparent)
+(struct for-stmt     (first second third body pos)  #:transparent)
 ;; 返り値: return <exp>;
-(struct return-stmt (exp pos)                   #:transparent)
+(struct return-stmt  (exp pos)                      #:transparent)
 
 
 
@@ -49,3 +49,5 @@
 (struct addr-exp    (var pos)           #:transparent)
 ;; 関数の呼び出し: <identifier> ( <argument-exp-list-opt> )
 (struct call-exp    (tgt args pos)      #:transparent)
+;;前置インクリメント・ディクリメント: ++<exp> / --<exp>
+(struct inc-exp     (op var pos)        #:transparent)
