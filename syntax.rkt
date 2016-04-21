@@ -49,5 +49,9 @@
 (struct addr-exp    (var pos)           #:transparent)
 ;; 関数の呼び出し: <identifier> ( <argument-exp-list-opt> )
 (struct call-exp    (tgt args pos)      #:transparent)
-;;前置インクリメント・ディクリメント: ++<exp> / --<exp>
-(struct inc-exp     (op var pos)        #:transparent)
+;; 前置インクリメント・ディクリメント: ++<exp> / --<exp>
+(struct front-inct-exp     (op var pos)  #:transparent)
+;; 後置インクリメント・ディクリメント: <exp>++ / <exp>--
+(struct back-inct-exp (op var pos)       #:transparent)
+;; コンマ: <exp>, <exp>
+(struct comma-exp (left right pos)       #:transparent)
