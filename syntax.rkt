@@ -4,14 +4,14 @@
 
 ;; declaration/definition
 
-;; 変数宣言文: type decls;
+;; 変数宣言文: type decls
 (struct declar (declrs pos)                            #:transparent)
-;; 配列: <identifer> [ <expression> ];
+;; 配列: <identifer> [ <expression> ]
 (struct array-exp (name size pos)                      #:transparent)
 ;; 関数のプロトタイプ宣言: type name ( parms );
-(struct function-prototype (type name parms)           #:transparent)
-;; 関数の定義 type fundec(parms)
-(struct function-definition (type name parms body)     #:transparent)
+(struct function-prototype (type name parms pos)           #:transparent)
+;; 関数の定義 type fundec ( parms ) body
+(struct function-definition (type name parms body pos)     #:transparent)
 
 
 
