@@ -107,11 +107,25 @@
     (declaration
      ; <type-specifier> <declarator-list> ;
      ((type-specifier declarator-list SEMI)
-      (stx:declar (map (lambda (declr)
-                         (cons (append (filter (lambda (x) (eq? x '*)) declr)
-                                       `(,$1))
-                               (list-ref declr (- (length declr) 1))))
-                       $2) $1-start-pos)))
+      (begin
+        (define (make-array array-elem stars)
+          (if (list? array-elem)
+              (stx:array-exp (if (list? (car array-elem)) '(array) (append stars `(,$1)))
+                             (make-array (car array-elem) stars)
+                             (cadr array-elem)
+                             (last array-elem))
+              array-elem))
+        (stx:declar (map (lambda (declr)
+                           (if (list? (last declr))
+                               (stx:array-exp  (if (list? (car (last declr))) '(array) (append (filter (lambda (x) (eq? x '*)) declr) `(,$1)))
+                                              (make-array (car (last declr)) (filter (lambda (x) (eq? x '*)) declr))
+                                              (cadr (last declr))
+                                              (last (last declr)))
+                               (cons (append (filter (lambda (x) (eq? x '*)) declr)
+                                             `(,$1))
+                                     (last declr))))
+                         $2)
+                    $1-start-pos))))
     ;; 宣言変数のリスト
     (declarator-list
      ; <declarator>
@@ -130,13 +144,13 @@
      ; <identifier>
      ((ID) (cons $1 $1-start-pos))
      ; <direct-declarator> [ <constant> ]
-     ((direct-declarator LBBRA NUM RBBRA) (stx:array-exp $1 $3 $3-start-pos)))
+     ((direct-declarator LBBRA NUM RBBRA) `(,$1 ,$3 ,$3-start-pos)))
     ;; 関数プロトタイプ宣言
     (function-prototype
      ; <type-specifier> <function-declarator> ;
      ((type-specifier function-declarator SEMI)
       (let ((id-param (list-ref $2 (- (length $2) 1))))
-        (stx:function-prototype (append (filter (lambda (x) (eq? x '*)) $2)
+        (stx:fun-prot (append (filter (lambda (x) (eq? x '*)) $2)
                                        `(,$1))
                                (car id-param)
                                (cdr id-param)
@@ -152,7 +166,7 @@
      ; <type-specifier> <function-declarator> <compound-statement>
      ((type-specifier function-declarator compound-statement)
       (let ((id-param (list-ref $2 (- (length $2) 1))))
-        (stx:function-definition (append (filter (lambda (x) (eq? x '*)) $2) `(,$1))
+        (stx:fun-def (append (filter (lambda (x) (eq? x '*)) $2) `(,$1))
                                  (car id-param)
                                  (cdr id-param)
                                  $3
