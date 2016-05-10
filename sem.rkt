@@ -7,11 +7,12 @@
 (define (extend-delta delta x data)
   (lambda (y) (if (equal? x y) data (delta y))))
 
-(define ... '(a))
+(define ... 'voidだよ)
 (struct decl    (name lev kind type) #:transparent)
 (struct pointer (type)               #:transparent)
 (struct array   (type size)          #:transparent)
 (struct fun     (type params)        #:transparent)
+(struct para    (plist)              #:transparent)
 
 (define (parse->sem parse env lev)
   (define (star-type->type list)
@@ -99,8 +100,7 @@
                              ;; 宣言名が初めて現れる場合は環境に書き込みnameをnew-objで置き換える
                              (let ((new-obj (decl name lev 'proto type)))
                                (begin (set! env (extend-delta env name new-obj)) new-obj)))
-                         parms ;; ここもエラー処理
-                         )))
+                         (parse->sem (para parms) (+ lev 1) env)))) ;;para構造体を作って再帰
         ((stx:fun-def? parse)
          (let* ((name (stx:fun-def-name parse))
                (parms (map (lambda (x) (decl (cadr x) (+ lev 1) 'para (caar x))) (stx:fun-def-parms parse)))
@@ -109,8 +109,17 @@
                (body (parse->sem (stx:fun-def-body parse) env (+ lev 1))))
          (sms:fun-def (star-type->type (stx:fun-def-type parse))
                                   (decl name lev 'fun type)
-                                  parms
-                                  body)))
+                                  (parse->sem (para parms) (+ lev 1) env) ;;para構造体を作って再帰 Lvは+1
+                                  (parse->sem body (+ lev 2) env)))) ;;bodyに対して再帰 Lvは+2
+        ((para? parse)
+         (map (lambda (x)
+                (let* ((type (car x))
+                       (name (cadr x))
+                       ;(pos (cddr x))
+                       (obj (env name)))
+                  ))
+              parse))
+        ;; 入会届！！！！！！！！！！！！！
         ((stx:if-stmt? parse) ...)
         ((stx:while-stmt? parse) ...)
         ((stx:return-stmt? parse) ...)
@@ -120,7 +129,7 @@
         ((stx:aop-exp? parse) ...)
         ((stx:deref-exp? parse) ...)
         ((stx:addr-exp? parse) ...)
-        ((stx:array-exp? parse) `(array ,(parse->sem (stx:array-exp-type parse) env lev) ,(parse->sem (stx:array-exp-size parse) env lev)))
+        ((stx:array-exp? parse) (array (parse->sem (stx:array-exp-type parse) env lev) (parse->sem (stx:array-exp-size parse) env lev)))
         ((stx:call-exp? parse) ...)
         ((stx:comma-exp? parse) ...)
         (else parse)))

@@ -10,9 +10,8 @@
 (struct array-exp (type name size pos)               #:transparent)
 ;; 関数のプロトタイプ宣言: type name ( parms );
 (struct fun-prot (type name parms pos)               #:transparent)
-;; 関数の定義 type fundec ( parms ) body
+;; 関数の定義: type fundec ( parms ) body
 (struct fun-def (type name parms body pos)           #:transparent)
-
 
 
 

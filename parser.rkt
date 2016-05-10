@@ -110,7 +110,7 @@
       (begin
         (define (make-array array-elem stars)
           (if (list? array-elem)
-              (stx:array-exp (if (list? (car array-elem)) '(array) (append stars `(,$1)))
+              (stx:array-exp (if (list? (car array-elem)) '(array) (append stars `3(,$1)))
                              (make-array (car array-elem) stars)
                              (cadr array-elem)
                              (last array-elem))
