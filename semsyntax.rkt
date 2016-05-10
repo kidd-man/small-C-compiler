@@ -7,11 +7,11 @@
 ;; 変数宣言文: type decls
 (struct declar (declrs)                            #:transparent)
 ;; 配列: <identifer> [ <expression> ]
-(struct array-exp (type name size)                      #:transparent)
+(struct array-exp (type name size)                 #:transparent)
 ;; 関数のプロトタイプ宣言: type name ( parms );
-(struct fun-prot (type name parms)           #:transparent)
+(struct fun-prot (type name parms)                 #:transparent)
 ;; 関数の定義 type fundec ( parms ) body
-(struct fun-def (type name parms body)     #:transparent)
+(struct fun-def (type name parms body)             #:transparent)
 
 
 
