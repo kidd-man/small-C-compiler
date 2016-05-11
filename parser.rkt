@@ -110,7 +110,7 @@
       (begin
         (define (make-array array-elem stars)
           (if (list? array-elem)
-              (stx:array-exp (if (list? (car array-elem)) '(array) (append stars `3(,$1)))
+              (stx:array-exp (if (list? (car array-elem)) '(array) (append stars `(,$1)))
                              (make-array (car array-elem) stars)
                              (cadr array-elem)
                              (last array-elem))
@@ -392,9 +392,7 @@
                          (stx:deref-exp-arg $2)
                          (stx:addr-exp $2 $1-start-pos)))
      ; * <unary-expr>
-     ((* unary-expr) (if (stx:addr-exp? $2)
-                         (stx:addr-exp-var $2)
-                         (stx:deref-exp $2 $1-start-pos)))
+     ((* unary-expr) (stx:deref-exp $2 $1-start-pos))
      ; ++ <unary-expr>
      ((++ unary-expr) (stx:front-inct-exp '+ $2 $1-start-pos))
      ; -- <unary-expr>
@@ -416,7 +414,7 @@
     ;; ID・即値・(式)
     (primary-expr
      ; <identifier>
-     ((ID) $1)
+     ((ID) (stx:var-exp $1 $1-start-pos))
      ; <constant>
      ((NUM) $1)
      ; ( <expression> )

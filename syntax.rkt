@@ -24,8 +24,6 @@
 (struct while-stmt   (test body pos)                #:transparent)
 ;; 繰り返し: do <stmt> while(<exp>);
 (struct do-while-stmt (body test pos)               #:transparent)
-;;繰り返し: for(<exp-opt>;<exp-opt>;<exp-opt>) <stmt>
-(struct for-stmt     (first second third body pos)  #:transparent)
 ;; 返り値: return <exp>;
 (struct return-stmt  (exp pos)                      #:transparent)
 
@@ -34,6 +32,8 @@
 
 ;; expression
 
+;; 変数参照
+(struct var-exp (var pos)               #:transparent)
 ;; 変数への代入: <var> = <exp>;
 (struct assign-exp  (var src pos)       #:transparent)
 ;; 論理演算: <left-exp> <op> <right-exp>
