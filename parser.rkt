@@ -224,7 +224,7 @@
       (stx:while-stmt $3 $5 $1-start-pos))
      ; do statement while ( expression );
      ((DO statement WHILE LPAR expression RPAR SEMI)
-      (stx:do-while-stmt $2 $5 $1-start-pos))
+      `(,$2 ,(stx:while-stmt $5 $2 $1-start-pos)))
      ; for ( <expression-opt> ; <expression-opt> ; <expression-opt> ) <statement>
      ((FOR LPAR expression-opt SEMI expression-opt
            SEMI expression-opt RPAR statement)

@@ -191,11 +191,6 @@
              (body (stx:while-stmt-body parse)))
          (sms:while-stmt (parse->sem test env lev)
                          (parse->sem body env lev))))
-      ((stx:do-while-stmt? parse)
-       (let ((body (stx:do-while-stmt-body parse))
-             (test (stx:do-while-stmt-test parse)))
-         (sms:do-while-stmt (parse->sem body env lev)
-                            (parse->sem test env lev))))
       ((stx:return-stmt? parse)
        (let ((exp (stx:return-stmt-exp parse)))
          (sms:return-stmt (parse->sem exp env lev))))
@@ -282,29 +277,157 @@
       (make-sem parse)))
 
 (define (type-inspection ast)
-  (cond ((sms:declar? ast) ...)
-        ((sms:fun-prot? ast) ...)
-        ((sms:fun-def? ast) ...)
-        ((sms:if-stmt? ast) ...)
-        ((sms:while-stmt? ast) ...)
-        ((sms:do-while-stmt? ast) ...)
-        ((sms:return-stmt? ast) ...)
-        ((sms:print-stmt? ast) ...)
-        ((sms:var-exp? ast) ...)
-        ((sms:assign-exp? ast) ...)
-        ((sms:log-exp? ast) ...)
-        ((sms:aop-exp? ast) ...)
-        ((sms:rop-exp? ast) ...)
-        ((sms:deref-exp? ast) ...)
-        ((sms:addr-exp? ast) ...)
-        ((sms:call-exp? ast) ...)))
+  (define make-star
+    (lambda (x) (cond ((pointer? x)
+                       (cons '* (make-star (pointer-type x))))
+                      ((array? x)
+                       (cons '* (make-star (array-type x))))
+                      (else x))))
+  (define typed?
+    (lambda (x) (if (array? x)
+                    (typed? (array-type x))
+                    (if (or (equal? x 'int) (equal? x 'float))
+                        #t #f))))
+  (cond ((list? ast) (andmap type-inspection ast))
+        ((sms:declar? ast)
+         (let ((types (map (lambda (x) (make-star (decl-type x))))))
+           ;; void関連の除外
+           (if (andmap typed? types)
+               #t #f)))
+        ((sms:fun-prot? ast)
+         (let ((type (make-star (sms:fun-prot-type)))
+               (args (map (lambda (x) (make-star (fun-params (decl-type x)))))))
+           (if (and
+                ;; void関連の除外
+                (andmap typed? args)
+                ;; 関数の返り値はvoidも可
+                (or (typed? type) (equal? type 'void)))
+               #t #f)))
+        ((sms:fun-def? ast)
+         (let ((type (make-star (sms:fun-def-type)))
+               (args (map (lambda (x) (make-star (fun-params (decl-type x))))))
+               (body (map type-inspection (sms:fun-def-body ast))))
+           (if (and
+                ;;
+                (andmap (lambda (x) x)
+                        (filter (lambda (x) (not (pair? x))) body))
+                ;;
+                (andmap (lambda (x) (equal? type (cdr x)))
+                        (filter pair? body))
+                ;; void関連の除外
+                (and (andmap typed? args)
+                     (or (typed? type) (equal? type 'void))))
+               #t #f)))
+        ((sms:if-stmt? ast)
+         (let ((test (type-inspection (sms:if-stmt-test ast)))
+               (tbody (type-inspection (sms:if-stmt-tbody ast)))
+               (ebody (type-inspection (sms:if-stmt-ebody ast))))
+           (if (and (equal? test 'int) tbody ebody)
+               #t #f)))
+        ((sms:while-stmt? ast)
+         (let ((test (type-inspection (sms:while-stmt-test ast)))
+               (body (type-inspection (sms:while-stmt-body ast))))
+           (if (and (equal? test 'int) body)
+               #t #f)))
+        ;; 関数定義から見えるようにペアを返す（car部はどうでもいい。）
+        ((sms:return-stmt? ast)
+         (let ((exp (type-inspection (sms:return-stmt-exp ast))))
+           (cons 'return exp)))
+        ((sms:print-stmt? ast) #t)
+        ;; 変数参照式はdecl-typeの型がつく。arrayはポインタとみなす。
+        ((sms:var-exp? ast)
+         (let ((type (decl-type (sms:var-exp-var ast))))
+             (make-star type)))
+        
+        ((sms:comma-exp? ast)
+         (let ((left (type-inspection (sms:comma-exp-left ast)))
+               (right (type-inspection (sms:comma-exp-right ast))))
+           (if (and (typed? left) (typed? right))
+               right
+               (error "エラー！コンマ演算のどこかに型がついてないものがあるよ！"))))
+        
+        ((sms:assign-exp? ast)
+         (let ((var (type-inspection (sms:assign-exp-var ast)))
+               (src (type-inspection (sms:assign-exp-src ast))))
+           (if (equal? var src)
+               var
+               (error "エラー！代入演算のところの型がおかしいよ！"))))
+        
+        ((sms:log-exp? ast)
+         (let ((op (sms:rop-exp-op ast))
+               (left (type-inspection (sms:rop-exp-left ast)))
+               (right (type-inspection (sms:rop-exp-right ast))))
+           (if (or (equal? op '&&) (equal? '||))
+               ;; &&,||：leftとrightがともにint型なら、int型がつく
+               (if (and (equal? left 'int) (equal? right 'int))
+                   'int
+                   (error "エラー！&&,||の両辺はint型だよ！"))
+               ;; ==,!=：leftとrightに同じ型がつくなら、int型がつく
+               (if (equal? left right)
+               'int
+               (error "エラー!比較演算の両辺は同じものだけだよ!")))))
+        
+        ((sms:rop-exp? ast)
+         (let ((op (sms:rop-exp-op ast))
+               (left (type-inspection (sms:rop-exp-left ast)))
+               (right (type-inspection (sms:rop-exp-right ast))))
+           ;; >,<,>=,<=：leftとrightに同じ型がつくなら、int型がつく
+           (if (equal? left right)
+               'int
+               (error "エラー！比較演算の両辺は同じものだけだよ！"))))
+        
+        ((sms:aop-exp? ast)
+         (let ((op (sms:aop-exp-op ast))
+               (left (type-inspection (sms:aop-exp-left ast)))
+               (right (type-inspection (sms:aop-exp-right ast))))
+         (cond ((equal? op '+)
+                (cond ((equal? (cons '* left) right)
+                       right)
+                      ((equal? (cons '* right) left)
+                       left)
+                      ((equal? left right)
+                       left)
+                      (else (error "エラー!int型と**int型の足し算的なことをしているよ!"))))
+               ((equal? op '-)
+                (if (equal? right 'int)
+                    left
+                    (error "エラー!マイナスの右辺はint型だけだよ!")))
+               (else
+                (if (and (equal? left 'int)
+                         (equal? right 'int))
+                    left
+                    (error "エラー!*と/の両辺はint型だけだよ!"))))))
+        ; *
+        ((sms:deref-exp? ast)
+         (let ((arg (sms:deref-exp-arg ast)))
+         (if (pair? arg)
+             (cdr arg)
+             (error "エラー！*の後ろがポインタじゃないよ！"))))
+        ; &
+        ((sms:addr-exp? ast)
+         (let ((var (sms:addr-exp-var ast)))
+               (cons '* var)))
+        ((sms:call-exp? ast)
+         (let ((fun-para-types (fun-params (decl-type (sms:call-exp-tgt ast))))
+               (call-arg-types (map type-inspection (sms:call-exp-args ast))))
+         (if (equal? (length fun-para-types)
+                     (length call-arg-types))
+             (if (and (andmap equal? fun-para-types  call-arg-types)
+                      (andmap typed? call-arg-types))
+                 (fun-type (decl-type (sms:call-exp-tgt ast)))
+                 (error "エラー！関数呼び出しの引数の型が違うよ！"))
+             (error "エラー！関数呼び出しの引数の数があってないよ！"))))
+        (else (if (number? ast)
+                  'int
+                  '???))))
 
-(define (sem parse) (parse->sem
-                     (append `(,(stx:fun-def '(void)
-                                          'print
-                                          (list (cons (cons '(int) void) (cons 'v void)))
-                                          (list (sms:print-stmt 'v))
-                                          void))
-                             parse)
-                     initial-delta
-                     0))
+(define (sem parse)
+  (parse->sem
+   (append `(,(stx:fun-def '(void)
+                           'print
+                           (list (list* (cons '(int) void) 'v void))
+                           (list (sms:print-stmt 'v))
+                           void))
+           parse)
+   initial-delta
+   0))

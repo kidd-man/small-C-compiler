@@ -21,8 +21,6 @@
 (struct if-stmt       (test tbody ebody)         #:transparent)
 ;; 繰り返し: while(<exp>) <stmt>
 (struct while-stmt    (test body)                #:transparent)
-;; 繰り返し: do <stmt> while(<exp>);
-(struct do-while-stmt (body test)                #:transparent)
 ;; 返り値: return <exp>;
 (struct return-stmt   (exp)                      #:transparent)
 ;; 出力: print(<exp>);
@@ -34,21 +32,21 @@
 
 
 ;; 変数参照
-(struct var-exp (var)               #:transparent)
+(struct var-exp (var)                #:transparent)
 ;; 変数への代入: <var> = <exp>;
-(struct assign-exp  (var src)       #:transparent)
+(struct assign-exp  (var src)        #:transparent)
 ;; 論理演算: <left-exp> <op> <right-exp>
-(struct log-exp     (op left right) #:transparent)
+(struct log-exp     (op left right)  #:transparent)
 ;; 算術演算: <left-exp> <op> <right-exp>
-(struct aop-exp     (op left right) #:transparent)
+(struct aop-exp     (op left right)  #:transparent)
 ;; 比較演算: <left-exp> <op> <right-exp>
-(struct rop-exp     (op left right) #:transparent)
+(struct rop-exp     (op left right)  #:transparent)
 ;; メモリ参照: *<exp>
-(struct deref-exp   (arg)           #:transparent)
+(struct deref-exp   (arg)            #:transparent)
 ;; アドレスを取る: &<var>
-(struct addr-exp    (var)           #:transparent)
+(struct addr-exp    (var)            #:transparent)
 ;; 関数の呼び出し: <identifier> ( <argument-exp-list-opt> )
-(struct call-exp    (tgt args)      #:transparent)
+(struct call-exp    (tgt args)       #:transparent)
 ;; 前置インクリメント・ディクリメント: ++<exp> / --<exp>
 (struct front-inct-exp     (op var)  #:transparent)
 ;; 後置インクリメント・ディクリメント: <exp>++ / <exp>--

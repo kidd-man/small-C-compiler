@@ -22,8 +22,6 @@
 (struct if-stmt      (test tbody ebody pos)         #:transparent)
 ;; 繰り返し: while(<exp>) <stmt>
 (struct while-stmt   (test body pos)                #:transparent)
-;; 繰り返し: do <stmt> while(<exp>);
-(struct do-while-stmt (body test pos)               #:transparent)
 ;; 返り値: return <exp>;
 (struct return-stmt  (exp pos)                      #:transparent)
 
