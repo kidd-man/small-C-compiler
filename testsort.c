@@ -1,5 +1,5 @@
 int num[8];
-int array[8][16];
+int **ababababa[8][16];
 int **k, *l, m;
 int **hoge(int a, int *b);
 
