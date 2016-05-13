@@ -24,7 +24,8 @@
 (struct while-stmt   (test body pos)                #:transparent)
 ;; 返り値: return <exp>;
 (struct return-stmt  (exp pos)                      #:transparent)
-
+;; 出力: print(<exp>);
+(struct print-stmt   (exp)                          #:transparent)
 
 
 

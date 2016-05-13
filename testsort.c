@@ -1,7 +1,7 @@
 int num[8];
-int **ababababa[8][16];
-int **k, *l, m;
-int *hoge(int a, int *b);
+int ab[8][16];
+int k, *l, m;
+int hoge(int a, int *b);
 
 void bubble_sort();
 
@@ -41,7 +41,7 @@ void bubble_sort() {
 	}
 }
 
-int *hoge( int art, int *banana ){
+int hoge( int art, int *banana ){
     int a, b, c;
     float p;
     int x;

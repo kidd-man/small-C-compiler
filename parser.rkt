@@ -3,8 +3,7 @@
 (require parser-tools/lex
          (prefix-in : parser-tools/lex-sre)
          (prefix-in stx: "syntax.rkt")
-         parser-tools/yacc
-         )
+         parser-tools/yacc)
  
 (define-tokens tokens-with-value
   (NUM ID))
