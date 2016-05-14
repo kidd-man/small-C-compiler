@@ -2,9 +2,14 @@
 ;; (require rackunit)
 (provide (all-defined-out))
 
+
+;; プログラム
+(struct program (declrs)                             #:transparent)
+
+
 ;; declaration/definition
 
-;; 変数宣言文: decls
+;; 変数宣言文: declrs
 (struct declar (declrs pos)                          #:transparent)
 ;; 配列: <identifer> [ <expression> ]
 (struct array-exp (type name size pos)               #:transparent)
@@ -26,8 +31,8 @@
 (struct return-stmt  (exp pos)                      #:transparent)
 ;; 出力: print(<exp>);
 (struct print-stmt   (exp)                          #:transparent)
-
-
+;; 複文: {<stmt> ... <stmt>}
+(struct cmpd-stmt    (stmts)                        #:transparent)
 
 ;; expression
 

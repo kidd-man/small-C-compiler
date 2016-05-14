@@ -314,11 +314,14 @@
        (let ((exp (stx:print-stmt-exp parse)))
          (stx:print-stmt (parse->sem exp env lev))))
       (else parse)))
-  
-  ;(type-inspection
-   (if (list? parse)
-       (map make-sem parse)
-       (make-sem parse)));)
+   (cond ((stx:program? parse)
+          (stx:program (map make-sem (stx:program-declrs parse))))
+         ((stx:cmpd-stmt? parse)
+          (stx:cmpd-stmt (map make-sem (stx:cmpd-stmt-stmts parse))))
+         ((list? parse)
+          (map make-sem parse))
+         (else (make-sem parse))))
+
 
 
 (define (type-inspection ast)
@@ -340,9 +343,14 @@
                           (else (if (or (equal? x 'int)
                                         (equal? x 'float))
                                     #t #f))))))
-  (cond ((list? ast)
-         (andmap typed? (map type-inspection ast)))
-        ((stx:declar? ast)
+  (cond
+    ((stx:program? ast)
+     (andmap type-inspection (stx:program-declrs ast)))
+    ((stx:cmpd-stmt? ast)
+     (map typed? (map type-inspection (stx:cmpd-stmt-stmts ast))))
+    ((list? ast)
+     (map type-inspection ast))
+    ((stx:declar? ast)
          (let ((types (map (lambda (x) (make-star (car x))) (stx:declar-declrs ast)))
                (pos (stx:declar-pos ast)))
            ;; void関連の除外
@@ -361,7 +369,7 @@
         ((stx:fun-def? ast)
          (let ((type (make-star (stx:fun-def-type ast)))
                (params (map (lambda (x) (make-star (car x))) (stx:fun-def-parms ast)))
-               (body (map type-inspection (stx:fun-def-body ast)))
+               (body (type-inspection (stx:fun-def-body ast)))
                (pos (stx:fun-def-pos ast)))
            (if (and
                 ;;
@@ -457,10 +465,10 @@
                     (error "エラー!*と/の両辺はint型だけだよ!"))))))
         ; *
         ((stx:deref-exp? ast)
-         (let ((arg (type-inspection (stx:deref-exp-arg ast))))
+         (let ((arg (make-star (type-inspection (stx:deref-exp-arg ast)))))
            (if (pair? arg)
                (cdr arg)
-               (error "エラー！*の後ろがポインタじゃないよ！"))))
+               (begin (display ">>>") (display (stx:deref-exp-arg ast)) (newline) (error "エラー！*の後ろがポインタじゃないよ！")))))
         ; &
         ((stx:addr-exp? ast)
          (let ((var (stx:addr-exp-var ast)))
@@ -481,15 +489,33 @@
              (error "エラー！関数呼び出しの引数の数があってないよ！"))))
         (else (if (number? ast)
                   'int
-                  '???))))
+                  (begin (display ":::") (display ast) (newline) '???)))))
+  
+  
+
 
 (define (sem parse)
-  (parse->sem
-   (append `(,(stx:fun-def '(void)
-                           'print
-                           (list (list* (cons '(int) void) 'v void))
-                           (list (stx:print-stmt 'v))
-                           void))
-           parse)
-   initial-delta
-   0))
+  (type-inspection
+   (parse->sem
+    (stx:program
+     (append `(,(stx:fun-def '(void)
+                             'print
+                             (list (list* (cons '(int) (void)) 'v (void)))
+                             (stx:cmpd-stmt `(,(stx:print-stmt 'v)))
+                             (void)))
+             (stx:program-declrs parse)))
+    initial-delta
+    0)))
+
+(define (parse)
+  (pretty-print-ast
+   (parse->sem
+    (stx:program
+     (append `(,(stx:fun-def '(void)
+                             'print
+                             (list (list* (cons '(int) (void)) 'v (void)))
+                             (stx:cmpd-stmt `(,(stx:print-stmt 'v)))
+                             (void)))
+             (stx:program-declrs (parse-file "testsort.c"))))
+    initial-delta 0)))
+(define (test) (pretty-print-ast (sem (parse-file "testsort.c"))))

@@ -91,9 +91,9 @@
     ;; プログラム
     (program
      ; <external-declaration>
-     ((external-declaration) `(,$1))
+     ((external-declaration) (stx:program `(,$1)))
      ; <program> <external-declaration>
-     ((program external-declaration) (append $1 `(,$2))))
+     ((program external-declaration) (stx:program (append (stx:program-declrs $1) `(,$2)))))
     ;; 大域宣言
     (external-declaration
      ; <declaration>
@@ -223,42 +223,46 @@
       (stx:while-stmt $3 $5 $1-start-pos))
      ; do statement while ( expression );
      ((DO statement WHILE LPAR expression RPAR SEMI)
-      `(,$2 ,(stx:while-stmt $5 $2 $1-start-pos)))
+      (stx:cmpd-stmt $2 (stx:while-stmt $5 $2 $1-start-pos)))
      ; for ( <expression-opt> ; <expression-opt> ; <expression-opt> ) <statement>
      ((FOR LPAR expression-opt SEMI expression-opt
            SEMI expression-opt RPAR statement)
-      `(,$3 ,(stx:while-stmt $5 (append (if (list? $9) $9 `(,$9)) `(,$7)) $1-start-pos)))
+      (stx:cmpd-stmt (list $3 (stx:while-stmt $5 (stx:cmpd-stmt (append (if (stx:cmpd-stmt? $9) (stx:cmpd-stmt-stmts $9) `(,$9)) `(,$7))) $1-start-pos))))
      ; return <expression-opt> ;
      ((RETURN expression-opt SEMI) (stx:return-stmt $2 $1-start-pos)))
     ;; 複文
     (compound-statement
      ; { <declaration-list-opt> <statement-list-opt> }
      ((LBRA declaration-list-opt statement-list-opt RBRA)
-      (append $2 $3)))
+      (stx:cmpd-stmt (append (stx:cmpd-stmt-stmts $2) (stx:cmpd-stmt-stmts $3)))))
     ;; 宣言のリストのオプショナル
     (declaration-list-opt
      ;
-     (() '())
+     (() (stx:cmpd-stmt '()))
      ; <declaration-list>
      ((declaration-list) $1))
     ;; 宣言のリスト
     (declaration-list
      ; <declaration>
-     ((declaration) `(,$1))
+     ((declaration) (stx:cmpd-stmt `(,$1)))
      ; <declaration-list> <declaration>
-     ((declaration-list declaration) (append $1 `(,$2))))
+     ((declaration-list declaration)
+      (stx:cmpd-stmt (append (stx:cmpd-stmt-stmts $1) `(,$2)))))
     ;; 文のリストのオプショナル
     (statement-list-opt
      ;
-     (() '())
+     (() (stx:cmpd-stmt '()))
      ; <statement-list>
      ((statement-list) $1))
     ;; 文のリスト
     (statement-list
      ; <statement>
-     ((statement) (if (list? $1) `(,@$1) `(,$1)))
+     ((statement) (stx:cmpd-stmt (if (stx:cmpd-stmt? $1) `(,@(stx:cmpd-stmt-stmts $1)) `(,$1))))
      ; <statement-list> <statement>
-     ((statement-list statement) (if (list? $2) (append $1 `(,@$2)) (append $1 `(,$2)))))
+     ((statement-list statement)
+      (stx:cmpd-stmt (if (stx:cmpd-stmt? $2)
+                         (append (stx:cmpd-stmt-stmts $1) `(,@(stx:cmpd-stmt-stmts $2)))
+                         (append (stx:cmpd-stmt-stmts $1) `(,$2))))))
     ;; 式のオプショナル
     (expression-opt
      ; 
