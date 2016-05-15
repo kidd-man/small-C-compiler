@@ -4,9 +4,23 @@
          (prefix-in sms: "semsyntax.rkt")
          parser-tools/lex)
 
-(define initial-delta (lambda (x) #f))
+;(define initial-delta (lambda (x) #f))
+;(define (extend-delta delta x data)
+;  (lambda (y) (if (equal? x y) data (delta y))))
+
+(define initial-delta '())
 (define (extend-delta delta x data)
-  (lambda (y) (if (equal? x y) data (delta y))))
+  (cons (cons x data) delta))
+(define (lookup-env delta x)
+  (if (null? delta) #f
+      (if (equal? x (car (car delta))) (cdr (car delta))
+          (lookup-env (cdr delta) x))))
+;(define (para-extend-delta delta paras)
+;  (if (null? paras) delta
+;      (cons (cons (cadar paras) (decl (cadar paras) 1 'para (caaar paras)))
+;            (para-extend-delta delta (cdr paras)))))
+
+
 
 (define ... 'voidだよ)
 (struct decl    (name lev kind type) #:transparent)
@@ -14,6 +28,9 @@
 (struct array   (type size)          #:transparent)
 (struct fun     (type params)        #:transparent)
 (struct para    (plist)              #:transparent)
+(struct p-and-b (para body)          #:transparent)
+
+(define-struct (name-resolve-error exn:fail:user) ())
 
 (define (parse->sem parse env lev)
   (define (star-type->type list)
@@ -29,6 +46,7 @@
         (array (make-array-type (stx:array-exp-name arr)) (stx:array-exp-size arr))
         (array (star-type->type (stx:array-exp-type arr)) (stx:array-exp-size arr))))
   (define ename "name resolve error: ")
+  
   ;; 処理本体
   (define (make-sem parse)
     (cond
@@ -39,11 +57,11 @@
            (let* ((namepos (if (stx:array-exp? x) (cdr (find-array-name x)) (cddr x)))
                   (name (if (stx:array-exp? x) (car (find-array-name x)) (cadr x)))
                   (type (if (stx:array-exp? x) (make-array-type x) (star-type->type (car x))))
-                  (obj (env name))
+                  (obj (lookup-env env name))
                   (line (number->string (position-line namepos)))
                   (col (number->string (position-col namepos)))
                   (msg (string-append line ":" col ": "
-                                      ename "error: redeclaration of '"
+                                      ename "redeclaration of '"
                                       (symbol->string name) "'")))
              (cons type
                    (if obj
@@ -51,24 +69,25 @@
                          ;; 既にその名前が関数として定義されている場合
                          ((or (equal? (decl-kind obj) 'fun) (equal? (decl-kind obj) 'proto))
                           (if (equal? lev 0)
-                              (begin (display (string-append msg " as different kind of symbol")
-                                              (current-error-port))
-                                     (newline (current-error-port)))
+                              ;; 例外を投げる
+                              (raise (name-resolve-error
+                                      (string-append msg " as different kind of symbol: function")
+                                      (current-continuation-marks)))
                               ;; 環境に新しいオブジェクトを追加してnameをnew-objに置き換える
                               (let ((new-obj (decl name lev 'var type)))
                                 (begin (set! env (extend-delta env name new-obj)) new-obj))))
                          ;; すでにその名前が変数として定義されている場合
                          ((equal? (decl-kind obj) 'var)
                           (if (equal? lev (decl-lev obj))
-                              (begin (display msg (current-error-port))
-                                     (newline (current-error-port)))
+                              ;; 例外を投げる
+                              (raise (name-resolve-error msg (current-continuation-marks)))
                               ;; 環境に新しいオブジェクトを追加してnameをnew-objに置き換える
                               (let ((new-obj (decl name lev 'var type)))
                                 (begin (set! env (extend-delta env name new-obj)) new-obj))))
                          ;; 既にその名前がパラメータとして宣言されている場合
                          ((equal? (decl-kind obj) 'parm)
                           (let ((new-obj (decl name lev 'var type)))
-                            (begin (display msg (current-error-port)) ;;警告
+                            (begin (eprintf (string-append msg " as diferent kind of symbol: parameter\n")) ;;警告
                                    (set! env (extend-delta env name new-obj)) ;;環境に新しいオブジェクトを追加して
                                    new-obj)))) ;;nameをnew-objに置き換える
                        (let ((new-obj (decl name lev 'var type)))
@@ -82,7 +101,7 @@
               (parms (stx:fun-prot-parms parse))
               (type (fun (star-type->type (stx:fun-prot-type parse))
                          (map (lambda (x) (star-type->type (caar x))) (stx:fun-prot-parms parse))))
-              (obj (env name))
+              (obj (lookup-env env name))
               (pos (stx:fun-prot-pos parse)))
          (stx:fun-prot (star-type->type (stx:fun-prot-type parse))
                        ;(decl name lev 'proto type)
@@ -129,7 +148,8 @@
                            ;; 未宣言の場合はオブジェクトを作成し環境に書き込みnameをnew-objで置き換える
                            (let ((new-obj (decl name lev 'proto type)))
                              (begin (set! env (extend-delta env name new-obj)) new-obj)))
-                       (parse->sem (para parms) env (+ lev 1)) ;;para構造体を作って再帰
+                       ;; パラメータ
+                       (p-and-b-para (parse->sem (p-and-b parms (void)) env (+ lev 1)))
                        pos)))
       
       ;; 関数定義
@@ -138,8 +158,8 @@
               (parms (stx:fun-def-parms parse))
               (type (fun (star-type->type (stx:fun-def-type parse))
                          (map (lambda (x) (star-type->type (caar x))) (stx:fun-def-parms parse))))
-              (body (stx:fun-def-body parse))
-              (obj (env name))
+              (body (stx:cmpd-stmt-stmts (stx:fun-def-body parse)))
+              (obj (lookup-env env name))
               (pos (stx:fun-def-pos parse)))
          (stx:fun-def (star-type->type (stx:fun-def-type parse))
                       (if obj
@@ -158,7 +178,7 @@
                                    (let ((new-obj (decl name lev 'proto type)))
                                      (begin (set! env (extend-delta env name new-obj)) new-obj))
                                    ;; 型が一致しない場合はエラー
-                                   (begin (display old-paratypelist) (display new-paratypelist) (error "エラー!すでに宣言した同じ名前の関数と型が異なるよ!")))))
+                                   (error "エラー!すでに宣言した同じ名前の関数と型が異なるよ!"))))
                             ;; 既にその名前が関数として定義されている場合
                             ((equal? (decl-kind obj) 'fun)
                              ;; 二重宣言なので無条件でエラー
@@ -175,31 +195,37 @@
                           ;; 環境になければ環境にnew-objを追加しnameをnew-objで置き換える
                           (let ((new-obj (decl name lev 'fun type)))
                             (begin (set! env (extend-delta env name new-obj)) new-obj)))
-                      (parse->sem (para parms) env (+ lev 1)) ;;para構造体を作って再帰 Lvは+1
-                      (parse->sem body env (+ lev 2)) ;;bodyに対して再帰 Lvは+2
+                      ;; パラメータ
+                      (p-and-b-para (parse->sem (p-and-b parms body) env (+ lev 1)))
+                       ;;body Lvはparameter-Lv+1
+                      (p-and-b-body (parse->sem (p-and-b parms body) env (+ lev 1)))
                       pos)))
-      ((para? parse)
-       (map (lambda (x)
-              (let* ((type (star-type->type (caar x)))
-                     (name (cadr x))
-                     ;(pos (cddr x))
-                     (obj (env name)))
-                (if obj
-                    (if (equal? 'parm (decl-type obj))
-                        (error "エラー!すでに同じ名前の引数が宣言されているよ!")
-                        ;; paraでなければ二重宣言ではないので環境に書き込みnameをnew-objに置き換える
-                        (let ((new-obj (decl name lev 'parm type)))
-                          (begin (set! env (extend-delta env name new-obj)) (cons type new-obj))))
-                    ;; 環境にない場合は環境に書き込みnameをnew-objに置き換える
-                    (let ((new-obj (decl name lev 'parm type)))
-                      (begin (set! env (extend-delta env name new-obj)) (cons type new-obj))))))
-            (para-plist parse)))
+      ((p-and-b? parse)
+       (p-and-b
+        (map (lambda (x)
+               (let* ((type (star-type->type (caar x)))
+                      (name (cadr x))
+                      ;(pos (cddr x))
+                      (obj (lookup-env env name)))
+                 (if obj
+                     (if (equal? 'parm (decl-type obj))
+                         (error "エラー!すでに同じ名前の引数が宣言されているよ!")
+                         ;; paraでなければ二重宣言ではないので環境に書き込みnameをnew-objに置き換える
+                         (let ((new-obj (decl name lev 'parm type)))
+                           (begin (set! env (extend-delta env name new-obj)) (cons type new-obj))))
+                     ;; 環境にない場合は環境に書き込みnameをnew-objに置き換える
+                     (let ((new-obj (decl name lev 'parm type)))
+                       (begin (set! env (extend-delta env name new-obj)) (cons type new-obj))))))
+             (p-and-b-para parse))
+        ;; body。voidはプロトタイプ宣言用
+        (if (void? (p-and-b-body parse)) (void)
+            (parse->sem (p-and-b-body parse) env (+ lev 1)))))
       ((stx:if-stmt? parse)
        (let ((test (stx:if-stmt-test parse))
              (tbody (stx:if-stmt-tbody parse))
              (ebody (stx:if-stmt-ebody parse))
              (pos (stx:if-stmt-pos parse)))
-         (stx:if-stmt (parse->sem test  env lev)
+         (stx:if-stmt (make-sem test)
                       (parse->sem tbody env lev)
                       (parse->sem ebody env lev)
                       pos)))
@@ -207,13 +233,13 @@
        (let ((test (stx:while-stmt-test parse))
              (body (stx:while-stmt-body parse))
              (pos (stx:while-stmt-pos parse)))
-         (stx:while-stmt (parse->sem test env lev)
+         (stx:while-stmt (make-sem test)
                          (parse->sem body env lev)
                          pos)))
       ((stx:return-stmt? parse)
        (let ((exp (stx:return-stmt-exp parse))
              (pos (stx:return-stmt-exp parse)))
-         (stx:return-stmt (parse->sem exp env lev)
+         (stx:return-stmt (make-sem exp)
                           pos)))
       ((stx:assign-exp? parse)
        (let ((var (stx:assign-exp-var parse))
@@ -221,8 +247,8 @@
              (pos (stx:assign-exp-pos parse)))
          (if (or (stx:deref-exp? var) (stx:var-exp? var))
              ;; *または、変数名かつarrayでない場合はおｋ
-             (stx:assign-exp (parse->sem var env lev)
-                             (parse->sem src env lev)
+             (stx:assign-exp (make-sem var)
+                             (make-sem src)
                              pos)
              ;; それ以外はエラー
              (error "エラー！代入式の左辺がおかしいよ！"))))
@@ -232,8 +258,8 @@
              (right (stx:log-exp-right parse))
              (pos (stx:log-exp-pos parse)))
          (stx:log-exp op
-                      (parse->sem left env lev)
-                      (parse->sem right env lev)
+                      (make-sem left)
+                      (make-sem right)
                       pos)))
       ((stx:rop-exp? parse)
        (let ((op (stx:rop-exp-op parse))
@@ -241,8 +267,8 @@
              (right (stx:rop-exp-right parse))
              (pos (stx:rop-exp-pos parse)))
          (stx:rop-exp op
-                      (parse->sem left env lev)
-                      (parse->sem right env lev)
+                      (make-sem left)
+                      (make-sem right)
                       pos)))
       ((stx:aop-exp? parse)
        (let ((op (stx:aop-exp-op parse))
@@ -250,34 +276,34 @@
              (right (stx:aop-exp-right parse))
              (pos (stx:aop-exp-pos parse)))
          (stx:aop-exp op
-                      (parse->sem left env lev)
-                      (parse->sem right env lev)
+                      (make-sem left)
+                      (make-sem right)
                       pos)))
       ;; *
       ((stx:deref-exp? parse)
        (let ((arg (stx:deref-exp-arg parse))
              (pos (stx:deref-exp-pos parse)))
-         (stx:deref-exp (parse->sem arg env lev)
+         (stx:deref-exp (make-sem arg)
                         pos)))
       ;; &
       ((stx:addr-exp? parse)
        (let ((var (stx:addr-exp-var parse))
              (pos (stx:addr-exp-pos parse)))
          (if (stx:var-exp? var)
-             (stx:addr-exp (parse->sem var env lev)
+             (stx:addr-exp (make-sem var)
                            pos)
              (error "エラー！＆演算子の後ろはメモリ上の場所を表すような式でないといけないよ！"))))
       ((stx:comma-exp? parse)
        (let ((left (stx:comma-exp-left parse))
              (right (stx:comma-exp-right parse))
              (pos (stx:comma-exp-pos parse)))
-         (stx:comma-exp (parse->sem left env lev)
-                        (parse->sem right env lev)
+         (stx:comma-exp (make-sem left)
+                        (make-sem right)
                         pos)))
       ((stx:var-exp? parse)
        (let* ((name (stx:var-exp-var parse))
               (pos (stx:var-exp-pos parse))
-              (obj (env name)))
+              (obj (lookup-env env name)))
              (stx:var-exp
               (if obj
                   ;; 環境に登録されている場合
@@ -295,7 +321,7 @@
        (let* ((name (stx:call-exp-tgt parse))
               (args (stx:call-exp-args parse))
               (pos (stx:call-exp-pos parse))
-              (obj (env name)))
+              (obj (lookup-env env name)))
          (stx:call-exp           
           (if obj
               ;; 環境に登録されている場合
@@ -308,12 +334,14 @@
                  obj))
               ;; 環境に登録されていない場合未宣言の変数を参照しているのでエラー
               (error "エラー!宣言していない関数を参照しているよ!"))
-          (parse->sem args env lev)
+          (map make-sem args)
           pos)))
       ((stx:print-stmt? parse)
        (let ((exp (stx:print-stmt-exp parse)))
-         (stx:print-stmt (parse->sem exp env lev))))
+         (stx:print-stmt (make-sem exp))))
       (else parse)))
+  
+
    (cond ((stx:program? parse)
           (stx:program (map make-sem (stx:program-declrs parse))))
          ((stx:cmpd-stmt? parse)
@@ -358,14 +386,14 @@
                #t (begin (error pos) #f))))
         ((stx:fun-prot? ast)
          (let ((type (make-star (stx:fun-prot-type ast)))
-               (parms (map (lambda (x) (make-star (car x))) (stx:fun-prot-parms ast)))
+               (parms (map (lambda (x) (car (make-star x))) (stx:fun-prot-parms ast)))
                (pos (stx:fun-prot-pos ast)))
            (if (and
                 ;; void関連の除外
                 (andmap typed? parms)
                 ;; 関数の返り値はvoidも可
                 (or (typed? type) (equal? type 'void)))
-               #t (begin (display pos) #f))))
+               #t (begin (display parms) #f))))
         ((stx:fun-def? ast)
          (let ((type (make-star (stx:fun-def-type ast)))
                (params (map (lambda (x) (make-star (car x))) (stx:fun-def-parms ast)))
@@ -468,7 +496,7 @@
          (let ((arg (make-star (type-inspection (stx:deref-exp-arg ast)))))
            (if (pair? arg)
                (cdr arg)
-               (begin (display ">>>") (display (stx:deref-exp-arg ast)) (newline) (error "エラー！*の後ろがポインタじゃないよ！")))))
+               (error "エラー！*の後ろがポインタじゃないよ！"))))
         ; &
         ((stx:addr-exp? ast)
          (let ((var (stx:addr-exp-var ast)))
@@ -489,12 +517,13 @@
              (error "エラー！関数呼び出しの引数の数があってないよ！"))))
         (else (if (number? ast)
                   'int
-                  (begin (display ":::") (display ast) (newline) '???)))))
+                  '???))))
   
   
 
 
 (define (sem parse)
+  (with-handlers ([name-resolve-error? (lambda (e) (begin (eprintf (exn-message e)) (exit)))])
   (type-inspection
    (parse->sem
     (stx:program
@@ -505,10 +534,9 @@
                              (void)))
              (stx:program-declrs parse)))
     initial-delta
-    0)))
+    0))))
 
 (define (parse)
-  (pretty-print-ast
    (parse->sem
     (stx:program
      (append `(,(stx:fun-def '(void)
@@ -517,5 +545,5 @@
                              (stx:cmpd-stmt `(,(stx:print-stmt 'v)))
                              (void)))
              (stx:program-declrs (parse-file "testsort.c"))))
-    initial-delta 0)))
-(define (test) (pretty-print-ast (sem (parse-file "testsort.c"))))
+    initial-delta 0))
+(define (test) (if (type-inspection (parse)) (pretty-print-ast (parse)) (error "失敗")))
