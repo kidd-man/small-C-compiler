@@ -31,6 +31,11 @@
 (struct p-and-b (para body)          #:transparent)
 
 (define-struct (name-resolve-error exn:fail:user) ())
+(define-struct (type-inspect-error exn:fail:user) ())
+
+;; エラーの種類
+(define etype "type inspection error: ")
+(define ename "name resolve error: ")
 
 (define (parse->sem parse env lev)
   (define (star-type->type list)
@@ -45,7 +50,6 @@
     (if (stx:array-exp? (stx:array-exp-name arr))
         (array (make-array-type (stx:array-exp-name arr)) (stx:array-exp-size arr))
         (array (star-type->type (stx:array-exp-type arr)) (stx:array-exp-size arr))))
-  (define ename "name resolve error: ")
   
   ;; 処理本体
   (define (make-sem parse)
@@ -469,11 +473,17 @@
            (if (equal? left right)
                'int
                (error "エラー！比較演算の両辺は同じものだけだよ！"))))
-        
+        ;; 四則演算
         ((stx:aop-exp? ast)
-         (let ((op (stx:aop-exp-op ast))
+         (let* ((op (stx:aop-exp-op ast))
                (left (type-inspection (stx:aop-exp-left ast)))
-               (right (type-inspection (stx:aop-exp-right ast))))
+               (right (type-inspection (stx:aop-exp-right ast)))
+               (pos (stx:aop-exp-pos ast))
+               (line (position-line pos))
+               (col (position-col pos))
+               (msg1 (string-append line ":" col ": "
+                                      etype "invalid operands to binary expression ('"
+                                      "'")))
          (cond ((equal? op '+)
                 (cond ((equal? (cons '* left) right)
                        right)
@@ -481,7 +491,7 @@
                        left)
                       ((equal? left right)
                        left)
-                      (else (error "エラー!int型と**int型の足し算的なことをしているよ!"))))
+                      (else (error "invalid operands to binary expression"))))
                ((equal? op '-)
                 (if (equal? right 'int)
                     left
@@ -491,17 +501,17 @@
                          (equal? right 'int))
                     left
                     (error "エラー!*と/の両辺はint型だけだよ!"))))))
-        ; *
+        ;; アドレス参照 *
         ((stx:deref-exp? ast)
          (let ((arg (make-star (type-inspection (stx:deref-exp-arg ast)))))
            (if (pair? arg)
                (cdr arg)
                (error "エラー！*の後ろがポインタじゃないよ！"))))
-        ; &
+        ;; アドレス取得 &
         ((stx:addr-exp? ast)
          (let ((var (stx:addr-exp-var ast)))
                (cons '* var)))
-        
+        ;; 関数呼び出し
         ((stx:call-exp? ast)
          (let ((fun-para-types (fun-params (decl-type (stx:call-exp-tgt ast))))
                (call-arg-types (map type-inspection (stx:call-exp-args ast))))
@@ -515,9 +525,9 @@
                      (fun-type (decl-type (stx:call-exp-tgt ast))))
                  (error "エラー！関数呼び出しの引数の型が違うよ！"))
              (error "エラー！関数呼び出しの引数の数があってないよ！"))))
-        (else (if (number? ast)
-                  'int
-                  '???))))
+        ;; 即値
+        (else (cond ((exact-integer? ast) 'int)
+                    ((flonum? ast)        'float)))))
   
   
 
