@@ -27,6 +27,9 @@
   (number  (:or "0"
                 (:: digit-non-zero
                     (uinteger digit))))
+  (floatnumber (:: (uinteger digit)
+                   "."
+                   (uinteger digit)))
   (identifier-char (:or (char-range "a" "z")
                         (char-range "A" "Z")))
   (identifier (:: identifier-char
@@ -70,6 +73,7 @@
    ("float"    (token-FLOAT))
    ("void"     (token-VOID))
    (number     (token-NUM (string->number lexeme)))
+   (floatnumber (token-NUM (string->number lexeme)))
    (identifier (token-ID (string->symbol lexeme)))
    (whitespace (return-without-pos (small-c-lexer input-port)))
    ((eof)      (token-EOF))))
@@ -109,19 +113,20 @@
       (begin
         (define (make-array array-elem stars)
           (if (list? array-elem)
-              (stx:array-exp (if (list? (car array-elem)) '(array) (append stars `(,$1)))
+              (stx:array-exp (if (list? (car array-elem)) '(array) (append stars $1))
                              (make-array (car array-elem) stars)
                              (cadr array-elem)
                              (last array-elem))
               array-elem))
         (stx:declar (map (lambda (declr)
                            (if (list? (last declr))
-                               (stx:array-exp  (if (list? (car (last declr))) '(array) (append (filter (lambda (x) (eq? x '*)) declr) `(,$1)))
+                               (stx:array-exp (if (list? (car (last declr))) '(array)
+                                                  (append (filter (lambda (x) (eq? x '*)) declr) $1))
                                               (make-array (car (last declr)) (filter (lambda (x) (eq? x '*)) declr))
                                               (cadr (last declr))
                                               (last (last declr)))
                                (cons (append (filter (lambda (x) (eq? x '*)) declr)
-                                             `(,$1))
+                                             $1)
                                      (last declr))))
                          $2)
                     $1-start-pos))))
@@ -150,7 +155,7 @@
      ((type-specifier function-declarator SEMI)
       (let ((id-param (list-ref $2 (- (length $2) 1))))
         (stx:fun-prot (append (filter (lambda (x) (eq? x '*)) $2)
-                                       `(,$1))
+                                       $1)
                                (car id-param)
                                (cdr id-param)
                                $2-start-pos))))
@@ -165,7 +170,7 @@
      ; <type-specifier> <function-declarator> <compound-statement>
      ((type-specifier function-declarator compound-statement)
       (let ((id-param (list-ref $2 (- (length $2) 1))))
-        (stx:fun-def (append (filter (lambda (x) (eq? x '*)) $2) `(,$1))
+        (stx:fun-def (append (filter (lambda (x) (eq? x '*)) $2) $1)
                                  (car id-param)
                                  (cdr id-param)
                                  $3
@@ -187,7 +192,7 @@
     (parameter-declaration
      ; <type-specifier> <parameter-declarator>
      ((type-specifier parameter-declarator)
-      (cons (cons (append (filter (lambda (x) (eq? x '*)) $2) `(,$1))
+      (cons (cons (append (filter (lambda (x) (eq? x '*)) $2) $1)
                   $1-start-pos)
             (list-ref $2 (- (length $2) 1)))))
     ;; 引数の名前
@@ -409,7 +414,7 @@
       (stx:deref-exp (stx:aop-exp '+ $1 $3 $3-start-pos) $1-start-pos))
      ; <identifier> ( <argument-expression-list-opt> )
      ((ID LPAR argument-expression-list-opt RPAR)
-      (stx:call-exp $1 $3 $1-start-pos))
+      (stx:call-exp $1 $3 $4-start-pos))
      ; <postfix-expr> ++
      ((postfix-expr ++) (stx:back-inct-exp '+ $1 $2-start-pos))
      ; <postfix-expr> --
@@ -431,10 +436,10 @@
     ;;引数の式のリスト
     (argument-expression-list
      ; <assign-expr>
-     ((assign-expr) `(,$1))
+     ((assign-expr) `(,(cons $1 $1-start-pos)))
      ; <argument-expression> , <assign-expr>
      ((argument-expression-list COMMA assign-expr)
-      (append $1 `(,$3)))))))
+      (append $1 `(,(cons $3 $3-start-pos))))))))
 
 (define (parse-port port)
   (port-count-lines! port)
