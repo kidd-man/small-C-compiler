@@ -219,10 +219,19 @@
      ((compound-statement) $1)
      ; if ( <expression> ) <statement>
      ((IF LPAR expression RPAR statement)
-      (stx:if-stmt $3 $5 '() $1-start-pos))
+      (stx:if-stmt $3
+                   (if (stx:cmpd-stmt? $5) $5
+                       (stx:cmpd-stmt $5))
+                   (stx:cmpd-stmt '())
+                   $1-start-pos))
      ; if ( <expression> ) <statement> else <statement>
      ((IF LPAR expression RPAR statement ELSE statement)
-      (stx:if-stmt $3 $5 $7 $1-start-pos))
+      (stx:if-stmt $3
+                   (if (stx:cmpd-stmt? $5) $5
+                       (stx:cmpd-stmt $5))
+                   (if (stx:cmpd-stmt? $7) $7
+                       (stx:cmpd-stmt $7))
+                   $1-start-pos))
      ; while ( <expression> ) <statement>
      ((WHILE LPAR expression RPAR statement)
       (stx:while-stmt $3 $5 $1-start-pos))

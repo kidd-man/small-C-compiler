@@ -29,6 +29,7 @@
 (struct fun     (type params)        #:transparent)
 (struct para    (plist)              #:transparent)
 (struct p-and-b (para body)          #:transparent)
+(struct returns (type-set)           #:transparent)
 
 (define-struct (name-resolve-error exn:fail:user) ())
 (define-struct (type-inspect-error exn:fail:user) ())
@@ -391,15 +392,18 @@
      (andmap type-inspection (stx:program-declrs ast)))
     
     ((stx:cmpd-stmt? ast)
-     ;; ペアはreturn文
-     (let ((bools (filter (compose1 not pair?)
-                          (map type-inspection (stx:cmpd-stmt-stmts ast))))
-           (returns (filter pair?
-                            (map type-inspection (stx:cmpd-stmt-stmts ast)))))
-       (display "returns---->")
-       (display (map type-inspection (stx:cmpd-stmt-stmts ast)))(newline)
-       (cons (andmap (compose1 typed? type-inspection) (stx:cmpd-stmt-stmts ast))
-             returns)))
+     (let* ((return-in '()))
+       ;; 各文からreturnを集める
+       ;;ここでreturn文以外も評価して検査する
+       (for-each (lambda (x)
+                   (if (returns? x)
+                       (set! return-in
+                             (reverse (set-union (reverse return-in) ;; for readable
+                                                 (reverse (returns-type-set x)))))
+                       (void)))
+                 (map type-inspection (stx:cmpd-stmt-stmts ast)))
+       ;; returnの集合のreturn構造体を返す
+       (returns return-in)))
     ((list? ast)
      (map type-inspection ast))
     ((stx:declar? ast)
@@ -420,21 +424,28 @@
            #t (begin (display "funprotoでエラー") #f))))
     ;; 関数定義
     ((stx:fun-def? ast)
-     (let ((type (make-star (stx:fun-def-type ast)))
+     (let ((ftype (make-star (stx:fun-def-type ast)))
            (params (map (lambda (x) (make-star (car x))) (stx:fun-def-parms ast)))
-           (body (type-inspection (stx:fun-def-body ast)))
+           (return-set (type-inspection (stx:fun-def-body ast)))
            (pos (stx:fun-def-pos ast))
-           (msg "~a:~a: ~a: "))
+           (msg "~a:~a: ~a: missmatch return statement type for function ('~a' for '~a')"))
        (cond
          ;; パラメータから void 関連の除外
          ((not (andmap typed? params))
           (error "エラー"))
          ;; body の return の型があってるかどうかのチェックをしてから
-         ;; body の boolean を返す
-         (else (begin (for-each (lambda (x) (display (car x)) (if (equal? type (car x)) #t
-                                                (error "エラー")))
-                                (cdr body))
-                      (car body))))))
+         ;; #tを返す。この時他のbodyも評価する。
+         (else (begin (for-each (lambda (x)
+                                  (let* ((rtype (car x))
+                                         (rpos (cdr x))
+                                         (rline (position-line rpos))
+                                         (rcol (position-col rpos)))
+                                  (if (equal? ftype rtype) #t
+                                      (raise (type-inspect-error
+                                              (format msg rline rcol etype rtype ftype)
+                  (current-continuation-marks))))))
+                                (returns-type-set return-set))
+                      #t)))))
     ;; if: testと２つのbodyを見る
     ((stx:if-stmt? ast)
      (let ((test (type-inspection (stx:if-stmt-test ast)))
@@ -442,7 +453,7 @@
            (ebody (type-inspection (stx:if-stmt-ebody ast)))
            (pos (stx:if-stmt-pos ast)))
        (if (equal? test 'int)
-           (cons `(,@(car tbody) ,@(car ebody)) (set-union (cdr tbody) (cdr ebody)))
+           (returns (set-union (returns-type-set tbody) (returns-type-set ebody)))
            (error "エラー"))))
     ;; while: testとbodyを見る
     ((stx:while-stmt? ast)
@@ -450,11 +461,11 @@
            (body (type-inspection (stx:while-stmt-body ast)))
            (pos (stx:while-stmt-pos ast)))
        (and (equal? test 'int) body)))
-    ;; リターン: 関数定義から見えるようにペアを返す（cdr部はpos）
+    ;; リターン: returnを集める集合で返す（cdr部はpos）
     ((stx:return-stmt? ast)
      (let ((exp (type-inspection (stx:return-stmt-exp ast)))
            (pos (stx:return-stmt-pos ast)))
-       (cons exp pos)))
+       (returns `(,(cons exp pos)))))
     ;; 出力処理: 常に正しい
     ((stx:print-stmt? ast) #t)
     ;; 変数参照式: decl-typeの型がつく。arrayはポインタとみなす。
