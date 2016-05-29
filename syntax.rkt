@@ -14,9 +14,9 @@
 ;; 配列: <identifer> [ <expression> ]
 (struct array-exp (type name size pos)               #:transparent)
 ;; 関数のプロトタイプ宣言: type name ( parms );
-(struct fun-prot (type name parms pos)               #:transparent)
+(struct fun-prot (type name parms tpos npos)         #:transparent)
 ;; 関数の定義: type fundec ( parms ) body
-(struct fun-def (type name parms body pos)           #:transparent)
+(struct fun-def (type name parms body tpos npos)     #:transparent)
 
 
 
@@ -37,9 +37,9 @@
 ;; expression
 
 ;; 変数参照
-(struct var-exp (var pos)               #:transparent)
+(struct var-exp     (var pos)               #:transparent)
 ;; 変数への代入: <var> = <exp>;
-(struct assign-exp  (var src pos)       #:transparent)
+(struct assign-exp  (var src vpos eqpos)       #:transparent)
 ;; 論理演算: <left-exp> <op> <right-exp>
 (struct log-exp     (op left right pos) #:transparent)
 ;; 算術演算: <left-exp> <op> <right-exp>
@@ -51,7 +51,7 @@
 ;; アドレスを取る: &<var>
 (struct addr-exp    (var pos)           #:transparent)
 ;; 関数の呼び出し: <identifier> ( <argument-exp-list-opt> )
-(struct call-exp    (tgt args pos)      #:transparent)
+(struct call-exp    (tgt args npos ppos)            #:transparent)
 ;; 前置インクリメント・ディクリメント: ++<exp> / --<exp>
 (struct front-inct-exp     (op var pos)  #:transparent)
 ;; 後置インクリメント・ディクリメント: <exp>++ / <exp>--

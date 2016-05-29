@@ -156,13 +156,14 @@
       (let ((id-param (list-ref $2 (- (length $2) 1))))
         (stx:fun-prot (append (filter (lambda (x) (eq? x '*)) $2)
                                        $1)
-                               (car id-param)
-                               (cdr id-param)
-                               $2-start-pos))))
+                      (caar id-param)
+                      (cdr id-param)
+                      $1-start-pos
+                      (cdar id-param)))))
     ;; 関数名と引数の宣言
     (function-declarator
      ; <identifier> ( <parameter-type-list-opt> )
-     ((ID LPAR parameter-type-list-opt RPAR) `(,(cons $1 $3)))
+     ((ID LPAR parameter-type-list-opt RPAR) `(,(cons (cons $1 $1-start-pos) $3)))
      ; * <function-declarator>
      ((* function-declarator) (append '(*) $2)))
     ;; 関数の定義
@@ -170,11 +171,13 @@
      ; <type-specifier> <function-declarator> <compound-statement>
      ((type-specifier function-declarator compound-statement)
       (let ((id-param (list-ref $2 (- (length $2) 1))))
-        (stx:fun-def (append (filter (lambda (x) (eq? x '*)) $2) $1)
-                                 (car id-param)
-                                 (cdr id-param)
-                                 $3
-                                 $2-start-pos))))
+        (stx:fun-def
+         (append (filter (lambda (x) (eq? x '*)) $2) $1)
+         (caar id-param)
+         (cdr id-param)
+         $3
+         $1-start-pos
+         (cdar id-param)))))
     ;; 引数の宣言のリストのオプショナル
     (parameter-type-list-opt
      ;
@@ -231,13 +234,13 @@
                        (stx:cmpd-stmt $5))
                    (if (stx:cmpd-stmt? $7) $7
                        (stx:cmpd-stmt $7))
-                   $1-start-pos))
+                   $3-start-pos))
      ; while ( <expression> ) <statement>
      ((WHILE LPAR expression RPAR statement)
-      (stx:while-stmt $3 $5 $1-start-pos))
+      (stx:while-stmt $3 $5 $3-start-pos))
      ; do statement while ( expression );
      ((DO statement WHILE LPAR expression RPAR SEMI)
-      (stx:cmpd-stmt $2 (stx:while-stmt $5 $2 $1-start-pos)))
+      (stx:cmpd-stmt $2 (stx:while-stmt $5 $2 $5-start-pos)))
      ; for ( <expression-opt> ; <expression-opt> ; <expression-opt> ) <statement>
      ((FOR LPAR expression-opt SEMI expression-opt
            SEMI expression-opt RPAR statement)
@@ -298,12 +301,12 @@
              (let ((inctop (stx:front-inct-exp-op $1))
                    (inctvar (stx:front-inct-exp-var $1))
                    (inctpos (stx:front-inct-exp-pos $1)))
-               (stx:assign-exp inctvar (stx:aop-exp inctop inctvar 1 inctpos) inctpos)))
+               (stx:assign-exp inctvar (stx:aop-exp inctop inctvar 1 inctpos) $1-start-pos inctpos)))
             ((stx:back-inct-exp? $1)
              (let ((inctop (stx:back-inct-exp-op $1))
                    (inctvar (stx:back-inct-exp-var $1))
                    (inctpos (stx:back-inct-exp-pos $1)))
-               (stx:assign-exp inctvar (stx:aop-exp inctop inctvar 1 inctpos) inctpos)))
+               (stx:assign-exp inctvar (stx:aop-exp inctop inctvar 1 inctpos) $1-start-pos inctpos)))
             (else $1)))
      ; <logical-or-expr> = <assign-expr>
      ((logical-or-expr = assign-expr)
@@ -311,45 +314,45 @@
              (let ((inctop (stx:front-inct-exp-op $3))
                    (inctvar (stx:front-inct-exp-var $3))
                    (inctpos (stx:front-inct-exp-pos $3)))
-               `(,(stx:assign-exp inctvar (stx:aop-exp inctop inctvar 1 inctpos) inctpos)
-                 ,(stx:assign-exp $1 inctvar $2-start-pos))))
+               `(,(stx:assign-exp inctvar (stx:aop-exp inctop inctvar 1 inctpos) $1-start-pos inctpos)
+                 ,(stx:assign-exp $1 inctvar $1-start-pos $2-start-pos))))
             ((stx:back-inct-exp? $3)
              (let ((inctop (stx:back-inct-exp-op $3))
                    (inctvar (stx:back-inct-exp-var $3))
                    (inctpos (stx:back-inct-exp-pos $3)))
-               `(,(stx:assign-exp $1 inctvar $2-start-pos)
-                 ,(stx:assign-exp inctvar (stx:aop-exp inctop inctvar 1 inctpos) inctpos))))
-            (else (stx:assign-exp $1 $3 $2-start-pos))))
+               `(,(stx:assign-exp $1 inctvar $1-start-pos $2-start-pos)
+                 ,(stx:assign-exp inctvar (stx:aop-exp inctop inctvar 1 inctpos) $1-start-pos inctpos))))
+            (else (stx:assign-exp $1 $3 $1-start-pos $2-start-pos))))
      ; <logical-or-expr> += <assign-expr>
      ((logical-or-expr += assign-expr)
       (cond ((stx:front-inct-exp? $3)
              (let ((inctop (stx:front-inct-exp-op $3))
                    (inctvar (stx:front-inct-exp-var $3))
                    (inctpos (stx:front-inct-exp-pos $3)))
-               `(,(stx:assign-exp inctvar (stx:aop-exp inctop inctvar 1 inctpos) inctpos)
-                 ,(stx:assign-exp $1 (stx:aop-exp '+ $1 inctvar $2-start-pos) $2-start-pos))))
+               `(,(stx:assign-exp inctvar (stx:aop-exp inctop inctvar 1 inctpos) $1-start-pos inctpos)
+                 ,(stx:assign-exp $1 (stx:aop-exp '+ $1 inctvar $2-start-pos) $1-start-pos $2-start-pos))))
             ((stx:back-inct-exp? $3)
              (let ((inctop (stx:back-inct-exp-op $3))
                    (inctvar (stx:back-inct-exp-var $3))
                    (inctpos (stx:back-inct-exp-pos $3)))
-             `(,(stx:assign-exp $1 (stx:aop-exp '+ $1 inctvar $2-start-pos) $2-start-pos)
-               ,(stx:assign-exp inctvar (stx:aop-exp inctop inctvar 1 inctpos) inctpos))))
-            (else (stx:assign-exp $1 (stx:aop-exp '+ $1 $3 $2-start-pos) $2-end-pos))))
+             `(,(stx:assign-exp $1 (stx:aop-exp '+ $1 inctvar $2-start-pos) $1-start-pos $2-start-pos)
+               ,(stx:assign-exp inctvar (stx:aop-exp inctop inctvar 1 inctpos) $1-start-pos inctpos))))
+            (else (stx:assign-exp $1 (stx:aop-exp '+ $1 $3 $2-start-pos) $1-start-pos $2-end-pos))))
      ; <logical-or-expr> -= <assign-expr>
      ((logical-or-expr -= assign-expr)
       (cond ((stx:front-inct-exp? $3)
              (let ((inctop (stx:front-inct-exp-op $3))
                    (inctvar (stx:front-inct-exp-var $3))
                    (inctpos (stx:front-inct-exp-pos $3)))
-               `(,(stx:assign-exp inctvar (stx:aop-exp inctop inctvar 1 inctpos) inctpos)
-                 ,(stx:assign-exp $1 (stx:aop-exp '- $1 inctvar $2-start-pos) $2-start-pos))))
+               `(,(stx:assign-exp inctvar (stx:aop-exp inctop inctvar 1 inctpos) $1-start-pos inctpos)
+                 ,(stx:assign-exp $1 (stx:aop-exp '- $1 inctvar $2-start-pos) $1-start-pos $2-start-pos))))
             ((stx:back-inct-exp? $3)
              (let ((inctop (stx:back-inct-exp-op $3))
                    (inctvar (stx:back-inct-exp-var $3))
                    (inctpos (stx:back-inct-exp-pos $3)))
-               `(,(stx:assign-exp $1 (stx:aop-exp '- $1 inctvar $2-start-pos) $2-start-pos)
-                 ,(stx:assign-exp inctvar (stx:aop-exp inctop inctvar 1 inctpos) inctpos))))
-            (else (stx:assign-exp $1 (stx:aop-exp '- $1 $3 $2-start-pos) $2-end-pos)))))
+               `(,(stx:assign-exp $1 (stx:aop-exp '- $1 inctvar $2-start-pos) $1-start-pos $2-start-pos)
+                 ,(stx:assign-exp inctvar (stx:aop-exp inctop inctvar 1 inctpos) $1-start-pos inctpos))))
+            (else (stx:assign-exp $1 (stx:aop-exp '- $1 $3 $2-start-pos) $1-start-pos $2-end-pos)))))
     ;; 論理和演算
     (logical-or-expr
      ; <logical-and-expr>
@@ -423,7 +426,7 @@
       (stx:deref-exp (stx:aop-exp '+ $1 $3 $3-start-pos) $1-start-pos))
      ; <identifier> ( <argument-expression-list-opt> )
      ((ID LPAR argument-expression-list-opt RPAR)
-      (stx:call-exp $1 $3 $4-start-pos))
+      (stx:call-exp $1 $3 $1-start-pos $4-start-pos))
      ; <postfix-expr> ++
      ((postfix-expr ++) (stx:back-inct-exp '+ $1 $2-start-pos))
      ; <postfix-expr> --

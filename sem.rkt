@@ -41,18 +41,22 @@
 (define eform "expression form error")
 
 (define (parse->sem parse env lev)
+    ;; (* ... * type) -> (pointer ... (pointer type))
   (define (make-pointer-type list)
     (if (pair? list)
         (pointer (make-pointer-type (cdr list)))
         list))
-  (define (find-array-name array)
-    (if (stx:array-exp? (stx:array-exp-name array))
-        (find-array-name (stx:array-exp-name array))
-        (stx:array-exp-name array)))
+  ;; (array-exp '(array) ... (array-exp type (* ... * name) size) ... size)
+  ;; -> (array ... (array (pointer ... (pointer type)) size) ... size)
   (define (make-array-type arr)
     (if (stx:array-exp? (stx:array-exp-name arr))
         (array (make-array-type (stx:array-exp-name arr)) (stx:array-exp-size arr))
         (array (make-pointer-type (stx:array-exp-type arr)) (stx:array-exp-size arr))))
+  ;; 
+  (define (find-array-name array)
+    (if (stx:array-exp? (stx:array-exp-name array))
+        (find-array-name (stx:array-exp-name array))
+        (stx:array-exp-name array)))
   
   ;; 処理本体
   (define (make-sem parse)
@@ -109,7 +113,8 @@
               (type (fun (make-pointer-type (stx:fun-prot-type parse))
                          (map (lambda (x) (make-pointer-type (caar x))) (stx:fun-prot-parms parse))))
               (obj (lookup-env env name))
-              (pos (stx:fun-prot-pos parse)))
+              (tpos (stx:fun-prot-tpos parse))
+              (npos (stx:fun-prot-npos parse)))
          (stx:fun-prot (make-pointer-type (stx:fun-prot-type parse))
                        ;(decl name lev 'proto type)
                        (if obj
@@ -157,7 +162,8 @@
                              (begin (set! env (extend-delta env name new-obj)) new-obj)))
                        ;; パラメータ
                        (p-and-b-para (parse->sem (p-and-b parms (void)) env (+ lev 1)))
-                       pos)))
+                       tpos
+                       npos)))
       
       ;; 関数定義
       ((stx:fun-def? parse)
@@ -167,7 +173,8 @@
                          (map (lambda (x) (make-pointer-type (caar x))) (stx:fun-def-parms parse))))
               (body (stx:cmpd-stmt-stmts (stx:fun-def-body parse)))
               (obj (lookup-env env name))
-              (pos (stx:fun-def-pos parse)))
+              (tpos (stx:fun-def-tpos parse))
+              (npos (stx:fun-def-npos parse)))
          (stx:fun-def (make-pointer-type (stx:fun-def-type parse))
                       (if obj
                           ;; 既に名前が環境に登録されている場合
@@ -206,23 +213,27 @@
                       (p-and-b-para (parse->sem (p-and-b parms body) env (+ lev 1)))
                       ;;body Lvはparameter-Lv+1
                       (p-and-b-body (parse->sem (p-and-b parms body) env (+ lev 1)))
-                      pos)))
+                      tpos
+                      npos)))
       ((p-and-b? parse)
        (p-and-b
         (map (lambda (x)
                (let* ((type (make-pointer-type (caar x)))
                       (name (cadr x))
-                      ;(pos (cddr x))
+                      (tpos (cdar x))
+                      (npos (cddr x))
                       (obj (lookup-env env name)))
                  (if obj
                      (if (equal? 'parm (decl-type obj))
                          (error "エラー!すでに同じ名前の引数が宣言されているよ!")
                          ;; paraでなければ二重宣言ではないので環境に書き込みnameをnew-objに置き換える
                          (let ((new-obj (decl name lev 'parm type)))
-                           (begin (set! env (extend-delta env name new-obj)) (cons type new-obj))))
+                           (begin (set! env (extend-delta env name new-obj))
+                                  (cons (cons type tpos) (cons new-obj npos)))))
                      ;; 環境にない場合は環境に書き込みnameをnew-objに置き換える
                      (let ((new-obj (decl name lev 'parm type)))
-                       (begin (set! env (extend-delta env name new-obj)) (cons type new-obj))))))
+                       (begin (set! env (extend-delta env name new-obj))
+                              (cons (cons type tpos) (cons new-obj npos)))))))
              (p-and-b-para parse))
         ;; body。voidはプロトタイプ宣言用
         (if (void? (p-and-b-body parse)) (void)
@@ -249,16 +260,23 @@
          (stx:return-stmt (make-sem exp)
                           pos)))
       ((stx:assign-exp? parse)
-       (let ((var (stx:assign-exp-var parse))
-             (src (stx:assign-exp-src parse))
-             (pos (stx:assign-exp-pos parse)))
+       (let* ((var (stx:assign-exp-var parse))
+              (src (stx:assign-exp-src parse))
+              (vpos (stx:assign-exp-vpos parse))
+              (eqpos (stx:assign-exp-eqpos parse))
+              (line (position-line vpos))
+              (col (position-col vpos))
+              (msg "~a:~a: ~a: expression is not assignable"))
          (if (or (stx:deref-exp? var) (stx:var-exp? var))
              ;; *または、変数名かつarrayでない場合はおｋ
              (stx:assign-exp (make-sem var)
                              (make-sem src)
-                             pos)
+                             vpos
+                             eqpos)
              ;; それ以外はエラー
-             (error "エラー！代入式の左辺がおかしいよ！"))))
+             (raise (name-resolve-error
+                     (format msg line col ename)
+                     (current-continuation-marks))))))
       ((stx:log-exp? parse)
        (let ((op (stx:log-exp-op parse))
              (left (stx:log-exp-left parse))
@@ -294,12 +312,17 @@
                         pos)))
       ;; &
       ((stx:addr-exp? parse)
-       (let ((var (stx:addr-exp-var parse))
-             (pos (stx:addr-exp-pos parse)))
+       (let* ((var (stx:addr-exp-var parse))
+              (pos (stx:addr-exp-pos parse))
+              (line (position-line pos))
+              (col (position-col pos))
+              (type (type-inspection var))
+              (msg "~a:~a: ~a: cannot take the address of an value of type '~a'"))
          (if (stx:var-exp? var)
              (stx:addr-exp (make-sem var)
                            pos)
-             (error "エラー！＆演算子の後ろはメモリ上の場所を表すような式でないといけないよ！"))))
+             (raise (name-resolve-error (format msg line col ename type)
+                                        (current-continuation-marks))))))
       ((stx:comma-exp? parse)
        (let ((left (stx:comma-exp-left parse))
              (right (stx:comma-exp-right parse))
@@ -310,6 +333,8 @@
       ((stx:var-exp? parse)
        (let* ((name (stx:var-exp-var parse))
               (pos (stx:var-exp-pos parse))
+              (line (position-line pos))
+              (col (position-col pos))
               (obj (lookup-env env name)))
              (stx:var-exp
               (if obj
@@ -320,14 +345,23 @@
                      obj)
                     ;; 関数ならば関数を変数として参照しているのでエラー
                     ((or (equal? (decl-kind obj) 'fun) (equal? (decl-kind obj) 'proto))
-                     (error "エラー!関数を変数として参照しているよ!")))
+                     (let ((msg (string-append "~a:~a: ~a: cannot refer "
+                                               "function name '~a' as a varb expression")))
+                     (raise (name-resolve-error (format msg line col ename name)
+                                                (current-continuation-marks))))))
                   ;; 環境に登録されていない場合未宣言の変数を参照しているのでエラー
-                  (error "エラー!宣言していない変数を参照しているよ!"))
+                  (let ((msg (string-append "~a:~a: ~a: implicit declaration"
+                                            " of varb '~a' is invalid")))
+                  (raise (name-resolve-error (format msg line col ename name)
+                                             (current-continuation-marks)))))
               pos)))
       ((stx:call-exp? parse)
        (let* ((name (stx:call-exp-tgt parse))
               (args (stx:call-exp-args parse))
-              (pos (stx:call-exp-pos parse))
+              (npos (stx:call-exp-npos parse))
+              (ppos (stx:call-exp-ppos parse))
+              (line (position-line npos))
+              (col (position-col npos))
               (obj (lookup-env env name)))
          (stx:call-exp           
           (if obj
@@ -335,14 +369,25 @@
               (cond
                 ;; 変数または引数ならば変数を関数として参照しているのでエラー
                 ((or (equal? (decl-kind obj) 'var) (equal? (decl-kind obj) 'parm))
-                 (error "エラー!変数を関数として参照しているよ!"))
+                 (let ((fulmsg (format
+                          (string-append "~a:~a: ~a: called object '~a' is"
+                                         " not a function or function pointer")
+                          line col ename name)))
+                 (raise
+                  (name-resolve-error fulmsg (current-continuation-marks)))))
                 ;; 関数ならばobjを参照して置き換える
                 ((or (equal? (decl-kind obj) 'fun) (equal? (decl-kind obj) 'proto))
                  obj))
-              ;; 環境に登録されていない場合未宣言の変数を参照しているのでエラー
-              (error "エラー!宣言していない関数を参照しているよ!"))
+              ;; 環境に登録されていない場合未宣言の関数を参照しているのでエラー
+              (let ((fulmsg (format
+                          (string-append "~a:~a: ~a: implicit declaration"
+                                         " of function '~a' is invalid")
+                          line col ename name)))
+              (raise
+               (name-resolve-error fulmsg (current-continuation-marks)))))
           (map (lambda (x) (cons (make-sem (car x)) (cdr x))) args)
-          pos)))
+          npos
+          ppos)))
       ((stx:print-stmt? parse)
        (let ((exp (stx:print-stmt-exp parse)))
          (stx:print-stmt (make-sem exp))))
@@ -361,10 +406,10 @@
 
 (define (type-inspection ast)
   (define make-star
-    (lambda (x) (cond ((pointer? x)
-                       (cons '* (make-star (pointer-type x))))
-                      ((array? x)
+    (lambda (x) (cond ((array? x)
                        (cons '* (make-star (array-type x))))
+                      ((pointer? x)
+                       (cons '* (make-star (pointer-type x))))
                       (else x))))
   ;; voidまたは
   ;;(list* * ... * 'intか'float)または
@@ -407,60 +452,128 @@
     ((list? ast)
      (map type-inspection ast))
     ((stx:declar? ast)
-         (let ((types (map (lambda (x) (make-star (car x))) (stx:declar-declrs ast)))
+         (let ((types (map (lambda (x) (make-star (car x)))
+                           (stx:declar-declrs ast)))
                (pos (stx:declar-pos ast)))
            ;; void関連の除外
            (if (andmap typed? types)
                #t (begin (error pos) #f))))
     ((stx:fun-prot? ast)
-     (let ((type (make-star (stx:fun-prot-type ast)))
-           (parms (map (lambda (x) (car (make-star x))) (stx:fun-prot-parms ast)))
-           (pos (stx:fun-prot-pos ast)))
-       (if (and
-            ;; void関連の除外
-            (andmap typed? parms)
-            ;; 関数の返り値はvoidも可
-            (or (typed? type) (equal? type 'void)))
-           #t (begin (display "funprotoでエラー") #f))))
+     (let* ((ftype (make-star (stx:fun-prot-type ast)))
+            (params (map (lambda (x)
+                           (cons (cons (make-star (caar x)) (cdar x))
+                                 (cdr x)))
+                         (stx:fun-prot-parms ast)))
+            (fpos (stx:fun-prot-tpos ast))
+            (fline (position-line fpos))
+            (fcol (position-col fpos))
+            (fmsg "~a:~a: ~a: illigal type '~a' to return type of function prototype"))
+       (begin
+         ;; 返り値の型検査
+         (if (and
+              ;; void関連の除外
+              (andmap typed? params)
+              ;; 関数の返り値はvoidも可
+              (or (typed? ftype) (equal? ftype 'void)))
+             #t
+             ;; エラーを投げる
+             (raise (type-inspect-error
+                     (format fmsg fline fcol etype ftype)
+                     (current-continuation-marks))))
+         ;; パラメータの型検査
+         (for-each (lambda (x)
+                     (let* ((ptype (caar x))
+                            (ppos (cdar x))
+                            (pline (position-line ppos))
+                            (pcol (position-col ppos))
+                            (pmsg "~a:~a: ~a: illigal type '~a' in parameter"))
+                       (if (and (not (equal? ptype 'void))
+                                (typed? ptype))
+                           #t
+                           (raise (type-inspect-error
+                                   (format pmsg pline pcol etype ptype)
+                                   (current-continuation-marks))))))
+                   params))))
     ;; 関数定義
     ((stx:fun-def? ast)
-     (let ((ftype (make-star (stx:fun-def-type ast)))
-           (params (map (lambda (x) (make-star (car x))) (stx:fun-def-parms ast)))
+     (let* ((ftype (make-star (stx:fun-def-type ast)))
+           (params (map (lambda (x)
+                          (cons (cons (make-star (caar x)) (cdar x))
+                                (cdr x)))
+                        (stx:fun-def-parms ast)))
            (return-set (type-inspection (stx:fun-def-body ast)))
-           (pos (stx:fun-def-pos ast))
-           (msg "~a:~a: ~a: missmatch return statement type for function ('~a' for '~a')"))
-       (cond
-         ;; パラメータから void 関連の除外
-         ((not (andmap typed? params))
-          (error "エラー"))
+           (fpos (stx:fun-def-tpos ast))
+           (fline (position-line fpos))
+           (fcol (position-col fpos))
+           (fmsg "~a:~a: ~a: illigal type '~a' to return type of function definition"))
+       ;; エラーがなければ#tを返す
+       (begin
+         ;; 返り値の型検査
+         (if (and
+              ;; void関連の除外
+              (andmap typed? params)
+              ;; 関数の返り値はvoidも可
+              (or (typed? ftype) (equal? ftype 'void)))
+             #t
+             (raise (type-inspect-error
+                     (format fmsg fline fcol etype ftype)
+                     (current-continuation-marks))))
+         ;; 各パラメータから void 関連の検査
+         (for-each (lambda (x)
+                     (let* ((ptype (caar x))
+                            (ppos (cdar x))
+                            (pline (position-line ppos))
+                            (pcol (position-col ppos))
+                            (pmsg "~a:~a: ~a: illigal type '~a' in parameter"))
+                       (if (and (not (equal? ptype 'void))
+                                (typed? ptype))
+                           #t
+                           (raise (type-inspect-error
+                                   (format pmsg pline pcol etype ptype)
+                                   (current-continuation-marks))))))
+                   params)
+         
          ;; body の return の型があってるかどうかのチェックをしてから
          ;; #tを返す。この時他のbodyも評価する。
-         (else (begin (for-each (lambda (x)
+          (for-each (lambda (x)
                                   (let* ((rtype (car x))
                                          (rpos (cdr x))
                                          (rline (position-line rpos))
-                                         (rcol (position-col rpos)))
+                                         (rcol (position-col rpos))
+                                         (rmsg "~a:~a: ~a: missmatch return statement type for function ('~a' for '~a')"))
                                   (if (equal? ftype rtype) #t
                                       (raise (type-inspect-error
-                                              (format msg rline rcol etype rtype ftype)
-                  (current-continuation-marks))))))
-                                (returns-type-set return-set))
-                      #t)))))
+                                              (format rmsg rline rcol etype rtype ftype)
+                                              (current-continuation-marks))))))
+                    (returns-type-set return-set))　#t)))
     ;; if: testと２つのbodyを見る
     ((stx:if-stmt? ast)
-     (let ((test (type-inspection (stx:if-stmt-test ast)))
-           (tbody (type-inspection (stx:if-stmt-tbody ast)))
-           (ebody (type-inspection (stx:if-stmt-ebody ast)))
-           (pos (stx:if-stmt-pos ast)))
+     (let* ((test (type-inspection (stx:if-stmt-test ast)))
+            (tbody (type-inspection (stx:if-stmt-tbody ast)))
+            (ebody (type-inspection (stx:if-stmt-ebody ast)))
+            (pos (stx:if-stmt-pos ast))
+            (line (position-line pos))
+            (col (position-col pos))
+            (msg "~a:~a: ~a: illigal type '~a' in IF test expression\nexpected: 'int'"))
        (if (equal? test 'int)
-           (returns (set-union (returns-type-set tbody) (returns-type-set ebody)))
-           (error "エラー"))))
+           (returns (set-union (returns-type-set tbody)
+                               (returns-type-set ebody)))
+           (raise (type-inspect-error
+                   (format msg line col etype test)
+                   (current-continuation-marks))))))
     ;; while: testとbodyを見る
     ((stx:while-stmt? ast)
-     (let ((test (type-inspection (stx:while-stmt-test ast)))
-           (body (type-inspection (stx:while-stmt-body ast)))
-           (pos (stx:while-stmt-pos ast)))
-       (and (equal? test 'int) body)))
+     (let* ((test (type-inspection (stx:while-stmt-test ast)))
+            (body (type-inspection (stx:while-stmt-body ast)))
+            (pos (stx:while-stmt-pos ast))
+            (line (position-line pos))
+            (col (position-col pos))
+            (msg "~a:~a: ~a: illigal type '~a' in WHILE test expression\nexpected: 'int'"))
+       (if (equal? test 'int)
+           body
+           (raise (type-inspect-error
+                   (format msg line col etype test)
+                   (current-continuation-marks))))))
     ;; リターン: returnを集める集合で返す（cdr部はpos）
     ((stx:return-stmt? ast)
      (let ((exp (type-inspection (stx:return-stmt-exp ast)))
@@ -480,7 +593,7 @@
     ((stx:assign-exp? ast)
      (let* ((var (type-inspection (stx:assign-exp-var ast)))
            (src (type-inspection (stx:assign-exp-src ast)))
-           (pos (stx:assign-exp-pos ast))
+           (pos (stx:assign-exp-eqpos ast))
            (line (position-line pos))
            (col (position-col pos))
            (msg "~a:~a: ~a: assignment of distinct pointer types ('~a' into '~a')"))
@@ -594,7 +707,7 @@
           (let* ((expect (length fun-para-types))
                  (have (length call-arg-types))
                  (pos (if (null? call-arg-types)
-                          (stx:call-exp-pos ast)
+                          (stx:call-exp-ppos ast)
                           (cdr (last call-arg-types))))
                  (line (position-line pos))
                  (col (+ (position-col pos) 1))
@@ -639,29 +752,17 @@
 (define (sem parse)
   (with-handlers ([name-resolve-error? (lambda (e) (begin (eprintf (exn-message e))))]
                   [type-inspect-error? (lambda (e) (begin (eprintf (exn-message e))))])
-  (if (type-inspection
-       (parse->sem
-        (stx:program
-         (append `(,(stx:fun-def 'void
-                                 'print
-                                 (list (list* (cons 'int (void)) 'v (void)))
-                                 (stx:cmpd-stmt `(,(stx:print-stmt 'v)))
-                                 (void)))
-                 (stx:program-declrs parse)))
-        initial-delta
-        0))
-      (pretty-print-ast
-       (parse->sem
-        (stx:program
-         (append `(,(stx:fun-def 'void
-                                 'print
-                                 (list (list* (cons 'int (void)) 'v (void)))
-                                 (stx:cmpd-stmt `(,(stx:print-stmt 'v)))
-                                 (void)))
-                 (stx:program-declrs parse)))
-        initial-delta
-        0))
-      (void))))
+    (let ((sem-program
+           (parse->sem (stx:program
+            (append `(,(stx:fun-def 'void
+                                    'print
+                                    (list (list* (cons 'int (position 0 0 0)) 'v (position 0 0 0)))
+                                    (stx:cmpd-stmt `(,(stx:print-stmt 'v)))
+                                    (position 0 0 0)
+                                    (position 0 0 0)))
+                    (stx:program-declrs parse))) initial-delta 0)))
+      (begin (type-inspection sem-program)
+             (pretty-print-ast sem-program)))))
 
 (define (parse)
    (pretty-print-ast
@@ -669,9 +770,10 @@
      (stx:program
       (append `(,(stx:fun-def 'void
                               'print
-                              (list (list* (cons 'int (void)) 'v (void)))
+                              (list (list* (cons 'int (position 0 0 0)) 'v (position 0 0 0)))
                               (stx:cmpd-stmt `(,(stx:print-stmt 'v)))
-                              (void)))
+                              (position 0 0 0)
+                              (position 0 0 0)))
               (stx:program-declrs (parse-file "testsort.c"))))
      initial-delta 0)))
 (define (test) (if (type-inspection (parse)) (pretty-print-ast (parse)) (error "失敗")))
