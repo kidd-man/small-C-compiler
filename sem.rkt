@@ -114,7 +114,9 @@
                          (map (lambda (x) (make-pointer-type (caar x))) (stx:fun-prot-parms parse))))
               (obj (lookup-env env name))
               (tpos (stx:fun-prot-tpos parse))
-              (npos (stx:fun-prot-npos parse)))
+              (npos (stx:fun-prot-npos parse))
+              (nline (position-line npos))
+              (ncol (position-col npos)))
          (stx:fun-prot (make-pointer-type (stx:fun-prot-type parse))
                        ;(decl name lev 'proto type)
                        (if obj
@@ -134,7 +136,9 @@
                                     (let ((new-obj (decl name lev 'proto type)))
                                       new-obj)
                                     ;; 型が一致しない場合はエラー
-                                    (error "エラー!すでに宣言した同じ名前の関数と型が異なるよ!"))))
+                                    (let ((msg "~a:~a: ~a: conflicting types for '~a'"))
+                                      (raise (name-resolve-error (format msg nline ncol ename name)
+                                                                 (current-continuation-marks)))))))
                              ;; 既にその名前が関数として定義されている場合
                              ((equal? (decl-kind obj) 'fun)
                               ;; 型が一致しているか確認
@@ -148,12 +152,16 @@
                                     (let ((new-obj (decl name lev 'proto type)))
                                       new-obj)
                                     ;; 型が一致しない場合はエラー
-                                    (error "エラー!すでに宣言した同じ名前の関数と型が異なるよ!"))))
+                                    (let ((msg "~a:~a: ~a: conflicting types for '~a'"))
+                                      (raise (name-resolve-error (format msg nline ncol ename name)
+                                                                 (current-continuation-marks)))))))
                              ;; すでにその名前が変数として定義されている場合
                              ((equal? (decl-kind obj) 'var)
                               (if (equal? lev (decl-lev obj))
-                                  ;; レベルが同じ場合は二重宣言としてエラー
-                                  (error "エラー!すでに同じ名前の変数が宣言されているよ!")
+                                  ;; 大域変数(レベルが等しい)ならば二重宣言なのでエラー
+                                  (let ((msg "~a:~a: ~a: redifinition of '~a' as different kind of symbol"))
+                                    (raise (name-resolve-error (format msg nline ncol ename name)
+                                                               (current-continuation-marks))))
                                   ;; レベルが違う場合はオブジェクトを作成し環境に書き込みnameをnew-objで置き換える
                                   (let ((new-obj (decl name lev 'proto type)))
                                     (begin (set! env (extend-delta env name new-obj)) new-obj)))))
@@ -174,7 +182,9 @@
               (body (stx:cmpd-stmt-stmts (stx:fun-def-body parse)))
               (obj (lookup-env env name))
               (tpos (stx:fun-def-tpos parse))
-              (npos (stx:fun-def-npos parse)))
+              (npos (stx:fun-def-npos parse))
+              (nline (position-line npos))
+              (ncol (position-col npos)))
          (stx:fun-def (make-pointer-type (stx:fun-def-type parse))
                       (if obj
                           ;; 既に名前が環境に登録されている場合
@@ -189,20 +199,26 @@
                                ;; 型が一致するかどうか
                                (if (and (equal? old-type new-type) (equal? old-paratypelist new-paratypelist))
                                    ;; 型が一致した場合は環境書き込みnameをnew-objで置き換える
-                                   (let ((new-obj (decl name lev 'proto type)))
+                                   (let ((new-obj (decl name lev 'fun type)))
                                      (begin (set! env (extend-delta env name new-obj)) new-obj))
                                    ;; 型が一致しない場合はエラー
-                                   (error "エラー!すでに宣言した同じ名前の関数と型が異なるよ!"))))
+                                   (let ((msg "~a:~a: ~a: conflicting types for '~a'"))
+                                   (raise (name-resolve-error (format msg nline ncol ename name)
+                                                              (current-continuation-marks)))))))
                             ;; 既にその名前が関数として定義されている場合
                             ((equal? (decl-kind obj) 'fun)
                              ;; 二重宣言なので無条件でエラー
-                             (error "エラー!すでに同じ名前の関数が定義されているよ!"))
+                             (let ((msg "~a:~a: ~a: redifinition of '~a'"))
+                             (raise (name-resolve-error (format msg nline ncol ename name)
+                                                        (current-continuation-marks)))))
                             ;; 変数として宣言されている場合
                             ((equal? (decl-kind obj) 'var)
                              ;; 登録された変数のレベルをチェック
                              (if (equal? (decl-lev obj) lev)
                                  ;; 大域変数(レベルが等しい)ならば二重宣言なのでエラー
-                                 (error "エラー!すでに同じ名前の変数が定義されているよ!")
+                                 (let ((msg "~a:~a: ~a: redifinition of '~a' as different kind of symbol"))
+                                 (raise (name-resolve-error (format msg nline ncol ename name)
+                                                            (current-continuation-marks))))
                                  ;; レベルが異なれば環境にnew-objを追加しnameをnew-objで置き換える
                                  (let ((new-obj (decl name lev 'fun type)))
                                    (begin (set! env (extend-delta env name new-obj)) new-obj)))))
@@ -222,10 +238,15 @@
                       (name (cadr x))
                       (tpos (cdar x))
                       (npos (cddr x))
-                      (obj (lookup-env env name)))
+                      (obj (lookup-env env name))
+                      (msg "~a:~a: ~a: redefinition of parameter '~a'")
+                      (line (position-line npos))
+                      (col (position-col npos)))
                  (if obj
-                     (if (equal? 'parm (decl-type obj))
-                         (error "エラー!すでに同じ名前の引数が宣言されているよ!")
+                     (if (equal? 'parm (decl-kind obj))
+                         ;; paraなら二重宣言なのでエラーを投げる
+                         (raise (name-resolve-error (format msg line col ename name)
+                                                    (current-continuation-marks)))
                          ;; paraでなければ二重宣言ではないので環境に書き込みnameをnew-objに置き換える
                          (let ((new-obj (decl name lev 'parm type)))
                            (begin (set! env (extend-delta env name new-obj))
