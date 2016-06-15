@@ -95,9 +95,15 @@
     ;; プログラム
     (program
      ; <external-declaration>
-     ((external-declaration) (stx:program `(,$1)))
+     ((external-declaration)
+      (if (list? $1)
+          (stx:program `(,@$1))
+          (stx:program `(,$1))))
      ; <program> <external-declaration>
-     ((program external-declaration) (stx:program (append (stx:program-declrs $1) `(,$2)))))
+     ((program external-declaration)
+      (if (list? $2)
+          (stx:program (append (stx:program-declrs $1) `(,@$2)))
+          (stx:program (append (stx:program-declrs $1) `(,$2))))))
     ;; 大域宣言
     (external-declaration
      ; <declaration>
@@ -118,18 +124,19 @@
                              (cadr array-elem)
                              (last array-elem))
               array-elem))
-        (stx:declar (map (lambda (declr)
-                           (if (list? (last declr))
-                               (stx:array-exp (if (list? (car (last declr))) '(array)
-                                                  (append (filter (lambda (x) (eq? x '*)) declr) $1))
-                                              (make-array (car (last declr)) (filter (lambda (x) (eq? x '*)) declr))
-                                              (cadr (last declr))
-                                              (last (last declr)))
-                               (cons (append (filter (lambda (x) (eq? x '*)) declr)
-                                             $1)
-                                     (last declr))))
-                         $2)
-                    $1-start-pos))))
+        (map (lambda (declr)
+               (stx:declar 
+                (if (list? (last declr))
+                    (stx:array-exp (if (list? (car (last declr))) '(array)
+                                       (append (filter (lambda (x) (eq? x '*)) declr) $1))
+                                   (make-array (car (last declr)) (filter (lambda (x) (eq? x '*)) declr))
+                                   (cadr (last declr))
+                                   (last (last declr)))
+                    (cons (append (filter (lambda (x) (eq? x '*)) declr)
+                                  $1)
+                          (last declr)))
+                $1-start-pos))
+             $2))))
     ;; 宣言変数のリスト
     (declarator-list
      ; <declarator>
@@ -261,10 +268,14 @@
     ;; 宣言のリスト
     (declaration-list
      ; <declaration>
-     ((declaration) (stx:cmpd-stmt `(,$1)))
+     ((declaration)
+      (stx:cmpd-stmt (if (list? $1) `(,@$1) `(,$1))))
      ; <declaration-list> <declaration>
      ((declaration-list declaration)
-      (stx:cmpd-stmt (append (stx:cmpd-stmt-stmts $1) `(,$2)))))
+      (stx:cmpd-stmt
+       (if (list? $2)
+           (append (stx:cmpd-stmt-stmts $1) `(,@$2))
+           (append (stx:cmpd-stmt-stmts $1) `(,$2))))))
     ;; 文のリストのオプショナル
     (statement-list-opt
      ;
@@ -274,11 +285,11 @@
     ;; 文のリスト
     (statement-list
      ; <statement>
-     ((statement) (stx:cmpd-stmt (if (stx:cmpd-stmt? $1) `(,@(stx:cmpd-stmt-stmts $1)) `(,$1))))
+     ((statement) (stx:cmpd-stmt (if (stx:cmpd-stmt? $1) (stx:cmpd-stmt-stmts $1) `(,$1)))) ;; `(,@(...))
      ; <statement-list> <statement>
      ((statement-list statement)
       (stx:cmpd-stmt (if (stx:cmpd-stmt? $2)
-                         (append (stx:cmpd-stmt-stmts $1) `(,@(stx:cmpd-stmt-stmts $2)))
+                         (append (stx:cmpd-stmt-stmts $1) (stx:cmpd-stmt-stmts $2)) ;; `(,@(...))
                          (append (stx:cmpd-stmt-stmts $1) `(,$2))))))
     ;; 式のオプショナル
     (expression-opt
@@ -370,9 +381,9 @@
      ; <relational-expr>
      ((relational-expr) $1)
      ; <equality-expr> == <relational-expr>
-     ((equality-expr == relational-expr) (stx:log-exp '== $1 $3 $2-start-pos))
+     ((equality-expr == relational-expr) (stx:rop-exp '== $1 $3 $2-start-pos))
      ; <equality-expr> != <relational-expr>
-     ((equality-expr != relational-expr) (stx:log-exp '!= $1 $3 $2-start-pos)))
+     ((equality-expr != relational-expr) (stx:rop-exp '!= $1 $3 $2-start-pos)))
     ;; 比較演算(不等式)
     (relational-expr
      ; <add-expr>
