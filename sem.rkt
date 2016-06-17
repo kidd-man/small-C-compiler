@@ -783,7 +783,7 @@
                                     (position 0 0 0)))
                     (stx:program-declrs parse))) initial-delta 0)))
       (begin (type-inspection sem-program)
-             (pretty-print-ast sem-program)))))
+             sem-program))))
 
 (define (parse)
    (pretty-print-ast
