@@ -12,14 +12,16 @@
 (define (fresh-symbol)
   (let ([oldid s_maxid])
     (set! s_maxid (+ s_maxid 1))
-    (string-append "_x" (number->string oldid))))
+    (string->symbol
+     (string-append "_x" (number->string oldid)))))
 
 ;; 新規ラベル
 (define l_maxid 0)
 (define (fresh-label)
   (let ([oldid l_maxid])
     (set! l_maxid (+ l_maxid 1))
-    (string-append "_l" (number->string oldid))))
+    (string->symbol
+     (string-append "_l" (number->string oldid)))))
 
 ;;log-exp用変換関数
 (define (log->ir var log)
@@ -34,9 +36,9 @@
                  [l3 (fresh-label)]
                  [l4 (fresh-label)]
                  [l5 (fresh-label)])
-             `(,@(ir-exp e1 left)
-               ,@(ir-exp e2 right)
-               ,(ir:if-stmt e1 l1 l2)
+             `(,@(ir-exp (sem:decl e1 0 'var 'temp) left)
+               ,@(ir-exp (sem:decl e2 0 'var 'temp) right)
+               ,(ir:if-stmt (sem:decl e1 0 'var 'temp) l1 l2)
                ,(ir:label-stmt l1)
                ,@(ir-exp var 1)
                ,(ir:goto-stmt l5)
@@ -56,9 +58,9 @@
                  [l3 (fresh-label)]
                  [l4 (fresh-label)]
                  [l5 (fresh-label)])
-             `(,@(ir-exp e1 left)
-               ,@(ir-exp e2 right)
-               ,(ir:if-stmt e1 l1 l2)
+             `(,@(ir-exp (sem:decl e1 0 'var 'temp) left)
+               ,@(ir-exp (sem:decl e2 0 'var 'temp) right)
+               ,(ir:if-stmt (sem:decl e1 0 'var 'temp) l1 l2)
                ,(ir:label-stmt l2)
                ,@(ir-exp var 0)
                ,(ir:goto-stmt l5)
@@ -79,18 +81,18 @@
   (cond
     ;; コンマ演算子 ;完成
     ((stx:comma-exp? exp)
-     `(,(ir-exp (stx:comma-exp-left exp)) ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;????
-       ,@(ir-exp var
-                ((stx:comma-exp-right exp)))))
+     (let ([t (fresh-symbol)])
+     `(,(ir-exp (sem:decl t 0 'var 'temp) (stx:comma-exp-left exp)) ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;????
+       ,@(ir-exp var (stx:comma-exp-right exp)))))
     ;; 代入 ;完成
     ((stx:assign-exp? exp)
      (if (stx:deref-exp? (stx:assign-exp-var exp))
          (let ([t1 (fresh-symbol)]
                [t2 (fresh-symbol)])
-         `(,@(ir-exp t1 (stx:deref-exp-arg (stx:assign-exp-var exp)))
-           ,@(ir-exp t2 (stx:assign-exp-src exp))
-           ,(ir:write-stmt t1 t2)
-           ,(ir:read-stmt var t1)))
+         `(,@(ir-exp (sem:decl t1 0 'var 'temp) (stx:deref-exp-arg (stx:assign-exp-var exp)))
+           ,@(ir-exp (sem:decl t2 0 'var 'temp) (stx:assign-exp-src exp))
+           ,(ir:write-stmt (sem:decl t1 0 'var 'temp) (sem:decl t2 0 'var 'temp))
+           ,(ir:read-stmt var (sem:decl t1 0 'var 'temp))))
          `(,@(ir-exp (stx:assign-exp-var exp)
                      (stx:assign-exp-src exp))
            ,(ir:assign-stmt var
@@ -103,13 +105,13 @@
     ((stx:rop-exp? exp)
      (let ([t1 (fresh-symbol)]
            [t2 (fresh-symbol)])
-     `(,@(ir-exp t1 (stx:rop-exp-left exp))
-       ,@(ir-exp t2 (stx:rop-exp-right exp))
+     `(,@(ir-exp (sem:decl t1 0 'var 'temp) (stx:rop-exp-left exp))
+       ,@(ir-exp (sem:decl t2 0 'var 'temp) (stx:rop-exp-right exp))
        ,(ir:assign-stmt
          (ir:var-exp var)
          (ir:rop-exp (stx:rop-exp-op exp)
-                    t1
-                    t2)))))
+                    (sem:decl t1 0 'var 'temp)
+                    (sem:decl t2 0 'var 'temp))))))
     
     ;; 二項演算 ;未完成
     ((stx:aop-exp? exp)
@@ -125,39 +127,38 @@
            (cond
              ;; 左側にintの場合
              ((equal? (sem:type-inspection (stx:aop-exp-left exp)) 'int)
-                  `(,@(ir-exp t1 (stx:aop-exp '* 4 (stx:aop-exp-left exp) (void)))
-                    ,@(ir-exp t2 (stx:aop-exp-right exp))
+                  `(,@(ir-exp (sem:decl t1 0 'var 'temp) (stx:aop-exp '* 4 (stx:aop-exp-left exp) (void)))
+                    ,@(ir-exp (sem:decl t2 0 'var 'temp) (stx:aop-exp-right exp))
                     ,(ir:assign-stmt
                       (ir:var-exp var)
-                      (ir:aop-exp op t1 t2))))
+                      (ir:aop-exp op
+                                  (sem:decl t1 0 'var 'temp)
+                                  (sem:decl t2 0 'var 'temp)))))
              ;; 右側にintの場合
              ((equal? (sem:type-inspection (stx:aop-exp-right exp)) 'int)
-              `(,@(ir-exp t1 (stx:aop-exp-left exp))
-                ,@(ir-exp t1 (stx:aop-exp '* 4 (stx:aop-exp-right exp) (void)))
+              `(,@(ir-exp (sem:decl t1 0 'var 'temp) (stx:aop-exp-left exp))
+                ,@(ir-exp (sem:decl t2 0 'var 'temp) (stx:aop-exp '* 4 (stx:aop-exp-right exp) (void)))
                 ,(ir:assign-stmt
                   (ir:var-exp var)
-                  (ir:aop-exp op t1 t2))))
-             ;; 機能しないはずだから消去可能
-             (else
-              `(,@(ir-exp t1 (stx:aop-exp-left exp))
-                ,@(ir-exp t2 (stx:aop-exp-right exp))
-                ,(ir:assign-stmt
-                  (ir:var-exp var)
-                  (ir:aop-exp op t1 t2)))))
+                  (ir:aop-exp op
+                              (sem:decl t1 0 'var 'temp)
+                              (sem:decl t2 0 'var 'temp))))))
            ;; ポインタ演算でなければそのまま変換
-           `(,@(ir-exp t1 (stx:aop-exp-left exp))
-             ,@(ir-exp t2 (stx:aop-exp-right exp))
+           `(,@(ir-exp (sem:decl t1 0 'var 'temp) (stx:aop-exp-left exp))
+             ,@(ir-exp (sem:decl t2 0 'var 'temp) (stx:aop-exp-right exp))
              ,(ir:assign-stmt
                (ir:var-exp var)
-               (ir:aop-exp op t1 t2))))))
+               (ir:aop-exp op
+                           (sem:decl t1 0 'var 'temp)
+                           (sem:decl t2 0 'var 'temp)))))))
     ((stx:deref-exp? exp)
      (let ([t (fresh-symbol)])
-       `(,@(ir-exp t (stx:deref-exp-arg exp))
-         ,(ir:read-stmt var t))))
+       `(,@(ir-exp (sem:decl t 0 'var 'temp) (stx:deref-exp-arg exp))
+         ,(ir:read-stmt var (sem:decl t 0 'var 'temp)))))
     ((stx:addr-exp? exp)
      (let ([t (fresh-symbol)])
-       `(,@(ir-exp t (stx:addr-exp-var exp))
-         ,(ir:assign-stmt var (ir:addr-exp t)))))
+       `(,@(ir-exp (sem:decl t 0 'var 'temp) (stx:addr-exp-var exp))
+         ,(ir:assign-stmt var (ir:addr-exp (sem:decl t 0 'var 'temp))))))
     ;; 関数呼び出し ;完成
     ((stx:call-exp? exp)
      (let ([newvars (map (lambda (x) (fresh-symbol))
@@ -180,15 +181,19 @@
 
 (define (ir-stmt sem)
   (cond
-    ((stx:program? sem) (map ir-stmt (stx:program-declrs sem)))
-    ((stx:declar? sem) (ir:var-decl (stx:declar-dec sem)))
-    ((stx:fun-prot? sem) ...)
+    ((stx:program? sem) `(,@(ir-stmt (stx:program-declrs sem))))
+    ((stx:declar? sem) `(,(ir:var-decl (stx:declar-dec sem))))
+    ((stx:fun-prot? sem) `())
     ((stx:fun-def? sem)
-     (ir:fun-def (stx:fun-def-name sem)
+     `(,(ir:fun-def (stx:fun-def-name sem)
                  (stx:fun-def-parms sem)
-                 (ir-stmt (stx:fun-def-body sem))))
+                 (ir-stmt (stx:fun-def-body sem)))))
     ((stx:cmpd-stmt? sem)
-     (map ir-stmt (stx:cmpd-stmt-stmts sem)))
+     (let ([decls (filter stx:declar?
+                          (stx:cmpd-stmt-stmts sem))]
+           [stmts (filter (compose1 not stx:declar?)
+                          (stx:cmpd-stmt-stmts sem))])
+     (ir:cmpd-stmt (ir-stmt decls) (ir-stmt stmts))))
 
     ;; IF文 ;完成
     ((stx:if-stmt? sem)
@@ -196,13 +201,13 @@
            [l1 (fresh-label)]
            [l2 (fresh-label)]
            [l3 (fresh-label)])
-     `(,@(ir-exp t (stx:if-stmt-test sem))
-       ,(ir:if-stmt t l1 l2)
+     `(,@(ir-exp (sem:decl t 0 'var 'temp) (stx:if-stmt-test sem))
+       ,(ir:if-stmt (sem:decl t 0 'var 'temp) l1 l2)
        ,(ir:label-stmt l1)
-       ,@(ir-stmt (stx:if-stmt-tbody sem))
+       ,(ir-stmt (stx:if-stmt-tbody sem))
        ,(ir:goto-stmt l3)
        ,(ir:label-stmt l2)
-       ,@(ir-stmt (stx:if-stmt-ebody sem))
+       ,(ir-stmt (stx:if-stmt-ebody sem))
        ,(ir:label-stmt l3))))
     ((stx:while-stmt? sem)
      (let ([t (fresh-symbol)]
@@ -210,30 +215,36 @@
            [l2 (fresh-label)]
            [l3 (fresh-label)])
      `(,(ir:label-stmt l1)
-       ,@(ir-exp t (stx:while-stmt-test sem))
-       ,(ir:if-stmt t l2 l3)
+       ,@(ir-exp (sem:decl t 0 'var 'temp) (stx:while-stmt-test sem))
+       ,(ir:if-stmt (sem:decl t 0 'var 'temp) l2 l3)
        ,(ir:label-stmt l2)
-       ,@(ir-stmt (stx:while-stmt-body sem))
+       ,(ir-stmt (stx:while-stmt-body sem))
        ,(ir:goto-stmt l1)
        ,(ir:label-stmt l3))))
     ((stx:return-stmt? sem)
      (let ([t (fresh-symbol)])
-       `(,@(ir-exp t (stx:return-stmt-exp sem))
-         ,(ir:ret-stmt t))))
+       `(,@(ir-exp (sem:decl t 0 'var 'temp) (stx:return-stmt-exp sem))
+         ,(ir:ret-stmt (sem:decl t 0 'var 'temp)))))
     ((stx:print-stmt? sem)
      (let ([t (fresh-symbol)])
-       `(,@(ir-exp t (stx:print-stmt-exp sem))
-         ,(ir:print-stmt t))))
+       `(,@(ir-exp (sem:decl t 0 'var 'temp) (stx:print-stmt-exp sem))
+         ,(ir:print-stmt (sem:decl t 0 'var 'temp)))))
     ((stx:assign-exp? sem)
      (if (stx:deref-exp? (stx:assign-exp-var sem))
          ;; * <exp> = <exp>
          (let ([t1 (fresh-symbol)]
                [t2 (fresh-symbol)])
-           `(,@(ir-exp t1 (stx:deref-exp-arg (stx:assign-exp-var sem)))
-             ,@(ir-exp t2 (stx:assign-exp-src sem))
-             ,(ir:write-stmt t1 t2)))
+           `(,@(ir-exp (sem:decl t1 0 'var 'temp) (stx:deref-exp-arg (stx:assign-exp-var sem)))
+             ,@(ir-exp (sem:decl t2 0 'var 'temp) (stx:assign-exp-src sem))
+             ,(ir:write-stmt (sem:decl t1 0 'var 'temp)
+                             (sem:decl t2 0 'var 'temp))))
          ;; x = <exp>
          (ir-exp (stx:assign-exp-var sem) (stx:assign-exp-src sem))))
+    ((list? sem)
+     (if (null? sem)
+         '()
+         `(,@(ir-stmt (car sem))
+           ,@(ir-stmt (cdr sem)))))
     (else (ir-exp (fresh-symbol) sem))))
 
 
