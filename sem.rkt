@@ -5,25 +5,15 @@
          (prefix-in sms: "semsyntax.rkt")
          parser-tools/lex)
 
-;(define initial-delta (lambda (x) #f))
-;(define (extend-delta delta x data)
-;  (lambda (y) (if (equal? x y) data (delta y))))
-
-(define initial-delta '())
+;; 環境変数の定義:
+; nameを引数に取り、登録されたdataを返す。
+; 未登録なら#fを返す。
+; extend-deltaでname付きdataを新しく加えたものを返す。
+(define initial-delta (lambda (x) #f))
 (define (extend-delta delta x data)
-  (cons (cons x data) delta))
-(define (lookup-env delta x)
-  (if (null? delta) #f
-      (if (equal? x (car (car delta))) (cdr (car delta))
-          (lookup-env (cdr delta) x))))
-;(define (para-extend-delta delta paras)
-;  (if (null? paras) delta
-;      (cons (cons (cadar paras) (decl (cadar paras) 1 'para (caaar paras)))
-;            (para-extend-delta delta (cdr paras)))))
+  (lambda (y) (if (equal? x y) data (delta y))))
 
-
-
-(define ... 'voidだよ)
+;; 各種構造体
 (struct decl    (name lev kind type) #:transparent)
 (struct pointer (type)               #:transparent)
 (struct array   (type size)          #:transparent)
@@ -32,29 +22,35 @@
 (struct p-and-b (para body)          #:transparent)
 (struct returns (type-set)           #:transparent)
 
+;; エラーの種類(構造体)
 (define-struct (name-resolve-error exn:fail:user) ())
 (define-struct (type-inspect-error exn:fail:user) ())
 (define-struct (expression-form-error exn:fail:user) ())
-
-;; エラーの種類
+;; エラーの種類(文字列)
 (define ename "name resolve error")
 (define etype "type inspection error")
 (define eform "expression form error")
 
 ;;構文解析した抽象構文木->さらに意味解析をした抽象構文木
+;;呼び出すごとに新たな環境を生成する
 (define (parse->sem parse env lev)
-    ;; (* ... * type) -> (pointer ... (pointer type))
+  ;; 局所関数群
+  ;
+  ; (* ... * type) -> (pointer ... (pointer type))
   (define (make-pointer-type list)
     (if (pair? list)
         (pointer (make-pointer-type (cdr list)))
         list))
-  ;; (array-exp '(array) ... (array-exp type (* ... * name) size) ... size)
-  ;; -> (array ... (array (pointer ... (pointer type)) size) ... size)
+  ; 多次元配列・ポインタの構文木を適切な構造体に変換する関数
+  ; (array-exp '(array) ... (array-exp type (* ... * name) size) ... size)
+  ; -> (array ... (array (pointer ... (pointer type)) size) ... size)
   (define (make-array-type arr)
     (if (stx:array-exp? (stx:array-exp-name arr))
-        (array (make-array-type (stx:array-exp-name arr)) (stx:array-exp-size arr))
-        (array (make-pointer-type (stx:array-exp-type arr)) (stx:array-exp-size arr))))
-  ;; 
+        (array (make-array-type (stx:array-exp-name arr))
+               (stx:array-exp-size arr))
+        (array (make-pointer-type (stx:array-exp-type arr))
+               (stx:array-exp-size arr))))
+  ; 多次元配列の名前を発掘する関数
   (define (find-array-name array)
     (if (stx:array-exp? (stx:array-exp-name array))
         (find-array-name (stx:array-exp-name array))
@@ -69,7 +65,7 @@
                   (namepos (if (stx:array-exp? dec) (cdr (find-array-name dec)) (cddr dec)))
                   (name (if (stx:array-exp? dec) (car (find-array-name dec)) (cadr dec)))
                   (type (if (stx:array-exp? dec) (make-array-type dec) (make-pointer-type (car dec))))
-                  (obj (lookup-env env name))
+                  (obj (env name))
                   (line (number->string (position-line namepos)))
                   (col (number->string (position-col namepos)))
                   (msg "~a:~a: ~a: redeclaration of '~a'"))
@@ -112,7 +108,7 @@
               (parms (stx:fun-prot-parms parse))
               (type (fun (make-pointer-type (stx:fun-prot-type parse))
                          (map (lambda (x) (make-pointer-type (caar x))) (stx:fun-prot-parms parse))))
-              (obj (lookup-env env name))
+              (obj (env name))
               (tpos (stx:fun-prot-tpos parse))
               (npos (stx:fun-prot-npos parse))
               (nline (position-line npos))
@@ -180,7 +176,7 @@
               (type (fun (make-pointer-type (stx:fun-def-type parse))
                          (map (lambda (x) (make-pointer-type (caar x))) (stx:fun-def-parms parse))))
               (body (stx:cmpd-stmt-stmts (stx:fun-def-body parse)))
-              (obj (lookup-env env name))
+              (obj (env name))
               (tpos (stx:fun-def-tpos parse))
               (npos (stx:fun-def-npos parse))
               (nline (position-line npos))
@@ -239,7 +235,7 @@
                       (name (cadr x))
                       (tpos (cdar x))
                       (npos (cddr x))
-                      (obj (lookup-env env name))
+                      (obj (env name))
                       (msg "~a:~a: ~a: redefinition of parameter '~a'")
                       (line (position-line npos))
                       (col (position-col npos)))
@@ -358,7 +354,7 @@
               (pos (stx:var-exp-pos parse))
               (line (position-line pos))
               (col (position-col pos))
-              (obj (lookup-env env name)))
+              (obj (env name)))
              (stx:var-exp
               (if obj
                   ;; 環境に登録されている場合
@@ -385,7 +381,7 @@
               (ppos (stx:call-exp-ppos parse))
               (line (position-line npos))
               (col (position-col npos))
-              (obj (lookup-env env name)))
+              (obj (env name)))
          (stx:call-exp           
           (if obj
               ;; 環境に登録されている場合

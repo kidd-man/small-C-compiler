@@ -114,7 +114,7 @@
      ((function-definition) $1))
     ;; 宣言
     (declaration
-     ; <type-specifier> <declarator-list> ;
+     ; <type-specifier> <declarator-list> 
      ((type-specifier declarator-list SEMI)
       (begin
         (define (make-array array-elem stars)
@@ -144,6 +144,7 @@
      ; <declarator-list> , <declarator>
      ((declarator-list COMMA declarator)
       (append $1 `(,$3))))
+    ;; カッコつき宣言変数
     ;; 宣言変数
     (declarator
      ; <direct-declarator>
@@ -155,7 +156,9 @@
      ; <identifier>
      ((ID) (cons $1 $1-start-pos))
      ; <direct-declarator> [ <constant> ]
-     ((direct-declarator LBBRA NUM RBBRA) `(,$1 ,$3 ,$3-start-pos)))
+     ((direct-declarator LBBRA NUM RBBRA) `(,$1 ,$3 ,$3-start-pos))
+     ; ( <direct-declarator> ) [ <constant> ]
+     ((direct-declarator LBBRA NUM RBBRA) '...))
     ;; 関数プロトタイプ宣言
     (function-prototype
      ; <type-specifier> <function-declarator> ;
