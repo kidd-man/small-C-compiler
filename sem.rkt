@@ -36,25 +36,43 @@
 (define (parse->sem parse env lev)
   ;; 局所関数群
   ;
-  ; (* ... * type) -> (pointer ... (pointer type))
-  (define (make-pointer-type list)
-    (if (pair? list)
-        (pointer (make-pointer-type (cdr list)))
-        list))
-  ; 多次元配列・ポインタの構文木を適切な構造体に変換する関数
-  ; (array-exp '(array) ... (array-exp type (* ... * name) size) ... size)
-  ; -> (array ... (array (pointer ... (pointer type)) size) ... size)
-  (define (make-array-type arr)
-    (if (stx:array-exp? (stx:array-exp-name arr))
-        (array (make-array-type (stx:array-exp-name arr))
-               (stx:array-exp-size arr))
-        (array (make-pointer-type (stx:array-exp-type arr))
-               (stx:array-exp-size arr))))
-  ; 多次元配列の名前を発掘する関数
+  ; (* ... * . type) -> (pointer ... (pointer type))
+  (define (make-pointer-type pairs)
+    (if (pair? pairs)
+        (pointer (make-pointer-type (cdr pairs)))
+        pairs))
+  
+  ;; 配列を意味解析用の型の構造体に変換する関数
+  ;; 配列に紛れたポインタも処理する
+  (define (make-type-struct par)
+    ;; (list * ... * obj) -> (pointer ... (pointer obj))
+    (define (make-pointer list)
+      (if (equal? (length list) 1)
+          (make-type-struct (car list))
+          (pointer (make-pointer (cdr list)))))
+    ;; id や (id * ... *) ならば#tを返す関数
+          (define (id? hoge)
+            (cond ((stx:array-exp? hoge) #f)
+                  ((list? hoge)
+                   (if (id? (car hoge)) #t #f))
+                  (else #t)))
+    ;; 本体
+    (cond ((stx:array-exp? par)
+           (array (make-type-struct
+                   (if (id? (stx:array-exp-name par))
+                       (stx:array-exp-type par)
+                       (stx:array-exp-name par)))
+                  (stx:array-exp-size par)))
+          ((list? par)
+           (make-pointer (reverse par)))
+          (else par)))
+  ;; 多次元配列の名前を発掘する関数
   (define (find-array-name array)
-    (if (stx:array-exp? (stx:array-exp-name array))
-        (find-array-name (stx:array-exp-name array))
-        (stx:array-exp-name array)))
+    (cond ((stx:array-exp? array)
+           (find-array-name (stx:array-exp-name array)))
+          ((list? array)
+           (find-array-name (car array)))
+          (else array)))
   
   ;; 処理本体
   (define (make-sem parse)
@@ -62,15 +80,15 @@
       ((stx:declar? parse)
        (stx:declar
            (let* ((dec (stx:declar-dec parse))
-                  (namepos (if (stx:array-exp? dec)
-                               (cdr (find-array-name dec))
-                               (cddr dec)))
-                  (name (if (stx:array-exp? dec)
-                            (car (find-array-name dec))
-                            (cadr dec)))
-                  (type (if (stx:array-exp? dec)
-                            (make-array-type dec)
-                            (make-pointer-type (car dec))))
+                  (namepos (if (equal? (car dec) 'undef)
+                               (cdr (find-array-name (cdr dec))) ;;配列
+                               (cddr dec)))                      ;;配列でない
+                  (name (if (equal? (car dec) 'undef)
+                            (car (find-array-name (cdr dec)))    ;;配列
+                            (cadr dec)))                         ;;配列でない
+                  (type (if (equal? (car dec) 'undef) 
+                            (make-type-struct (cdr dec))         ;;配列
+                            (make-pointer-type (car dec))))      ;;配列でない
                   (obj (env name))
                   (line (number->string (position-line namepos)))
                   (col (number->string (position-col namepos)))

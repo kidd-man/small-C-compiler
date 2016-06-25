@@ -126,7 +126,7 @@
      ((type-specifier declarator-list SEMI)
       ;; 配列・ポインタは構造が反転しているので
       ;; 正しい構造に直して
-      ;; idと構造木のペアに変換する
+      ;; 型と構造木のペアに変換する
       (begin
         ;; 埋もれているIDを見つける関数
         (define (find-id str)
@@ -135,27 +135,24 @@
                 ((list? str)
                  (find-id (car str)))
                 (else str)))
-        ;; 構造を反転させる関数
-        ;; 多次元のarrayのtypeは'undefを取る(意味解析で調べる)
-        (define (reverse-parse str init)
-          ;; id や (id * ... *) ならば#tを返す関数
+        ;; id や (id * ... *) ならば#tを返す関数
           (define (id? hoge)
             (cond ((stx:array-exp? hoge) #f)
                   ((list? hoge)
                    (if (id? (car hoge)) #t #f))
                   (else #t)))
+        ;; 構造を反転させる関数
+        ;; 多次元のarrayのtypeは'undefを取る(意味解析で調べる)
+        (define (reverse-parse str init)
           (cond ((stx:array-exp? str)
                  (let ([name (stx:array-exp-name str)]
                        [size (stx:array-exp-size str)]
                        [pos (stx:array-exp-pos str)])
                  (if (id? init)
-                     (if (list? init)
-                         (reverse-parse
-                          name
-                          (stx:array-exp (cons $1 (cdr init)) (car init) size pos))
-                         (reverse-parse
-                          name
-                          (stx:array-exp $1 init size pos)))
+                     (reverse-parse
+                      name
+                      (stx:array-exp (append (cdr init) `(,$1))
+                                     (car init) size pos))
                      (reverse-parse
                       name
                       (stx:array-exp 'undef init size pos)))))
@@ -166,7 +163,18 @@
                 (else init)))
         ;; 宣言リストの本体
         (map (lambda (declr)
-               (stx:declar (reverse-parse declr (find-id declr)) $1-start-pos))
+               (stx:declar
+                (cons
+                 ;; 宣言の型: 配列はundef(意味解析で調べる)
+                 (if (id? declr)
+                     (if (list? declr)
+                         (append (cdr declr) $1)
+                         $1)
+                     'undef)
+                 (if (id? declr)
+                     (find-id declr)
+                     (reverse-parse declr (find-id declr))))
+                $1-start-pos))
              $2))))
     ;; 宣言変数のリスト
     (declarator-list
@@ -181,7 +189,9 @@
      ; <direct-declarator>
      ((direct-declarator) $1)
      ; * <declarator>
-     ((* declarator) (cons $2 '(*)))
+     ((* declarator) (if (list? $2)
+                         (append $2 '(*))
+                         (cons $2 '(*))))
      ; ( <declarator> )
      ((LPAR declarator RPAR)  $2))
     ;; 宣言変数そのもの(ポインタを除いたID)
@@ -461,7 +471,8 @@
      ; ++ <unary-expr>
      ((++ unary-expr) (front-inct-exp '+ $2 $1-start-pos))
      ; -- <unary-expr>
-     ((-- unary-expr) (front-inct-exp '- $2 $1-start-pos)))
+     ((-- unary-expr) (front-inct-exp '- $2 $1-start-pos))
+     ((LPAR type-specifier RPAR unary-expr) (stx:cast-exp $2 $4 $1-start-pos)))
     ;; 接尾演算
     (postfix-expr
      ; <primary-expr>
