@@ -62,9 +62,15 @@
       ((stx:declar? parse)
        (stx:declar
            (let* ((dec (stx:declar-dec parse))
-                  (namepos (if (stx:array-exp? dec) (cdr (find-array-name dec)) (cddr dec)))
-                  (name (if (stx:array-exp? dec) (car (find-array-name dec)) (cadr dec)))
-                  (type (if (stx:array-exp? dec) (make-array-type dec) (make-pointer-type (car dec))))
+                  (namepos (if (stx:array-exp? dec)
+                               (cdr (find-array-name dec))
+                               (cddr dec)))
+                  (name (if (stx:array-exp? dec)
+                            (car (find-array-name dec))
+                            (cadr dec)))
+                  (type (if (stx:array-exp? dec)
+                            (make-array-type dec)
+                            (make-pointer-type (car dec))))
                   (obj (env name))
                   (line (number->string (position-line namepos)))
                   (col (number->string (position-col namepos)))
@@ -76,8 +82,9 @@
                           (if (equal? lev 0)
                               ;; 例外を投げる
                               (raise (name-resolve-error
-                                      (string-append (format msg line col ename name)
-                                                     " as different kind of symbol: function")
+                                      (string-append
+                                       (format msg line col ename name)
+                                       " as different kind of symbol: function")
                                       (current-continuation-marks)))
                               ;; 環境に新しいオブジェクトを追加してnameをnew-objに置き換える
                               (let ((new-obj (decl name lev 'var type)))
@@ -94,10 +101,15 @@
                          ;; 既にその名前がパラメータとして宣言されている場合
                          ((equal? (decl-kind obj) 'parm)
                           (let ((new-obj (decl name lev 'var type)))
-                            (begin (eprintf (string-append (format msg line col ename name)
-                                                           " as diferent kind of symbol: parameter\n")) ;;警告
-                                   (set! env (extend-delta env name new-obj)) ;;環境に新しいオブジェクトを追加して
-                                   new-obj)))) ;;nameをnew-objに置き換える
+                            (begin
+                              ;;警告
+                              (eprintf
+                               (string-append
+                                (format msg line col ename name)
+                                " as diferent kind of symbol: parameter\n"))
+                              ;;環境に新しいオブジェクトを追加して
+                              (set! env (extend-delta env name new-obj))
+                              new-obj)))) ;;nameをnew-objに置き換える
                        (let ((new-obj (decl name lev 'var type)))
                          ;; 環境に新しいオブジェクトを追加してnameをnew-objに置き換える
                          (begin (set! env (extend-delta env name new-obj)) new-obj))))
@@ -412,7 +424,7 @@
          (stx:print-stmt (make-sem exp))))
       (else parse)))
   
-
+   ;; 環境の参照先が変わらないための形式的本体
    (cond ((stx:program? parse)
           (stx:program (map make-sem (stx:program-declrs parse))))
          ((stx:cmpd-stmt? parse)
@@ -422,7 +434,7 @@
          (else (make-sem parse))))
 
 
-
+;; 型検査　
 (define (type-inspection ast)
   (define make-star
     (lambda (x) (cond ((array? x)

@@ -77,7 +77,15 @@
    (identifier (token-ID (string->symbol lexeme)))
    (whitespace (return-without-pos (small-c-lexer input-port)))
    ((eof)      (token-EOF))))
- 
+
+;; 一時的に使用する構造体
+
+;; 前置インクリメント・ディクリメント: ++<exp> / --<exp>
+(struct front-inct-exp (op var pos) #:transparent)
+;; 後置インクリメント・ディクリメント: <exp>++ / <exp>--
+(struct back-inct-exp  (op var pos) #:transparent)
+
+
 (define small-c-parser
   (parser
    (start program)
@@ -116,26 +124,49 @@
     (declaration
      ; <type-specifier> <declarator-list> 
      ((type-specifier declarator-list SEMI)
+      ;; 配列・ポインタは構造が反転しているので
+      ;; 正しい構造に直して
+      ;; idと構造木のペアに変換する
       (begin
-        (define (make-array array-elem stars)
-          (if (list? array-elem)
-              (stx:array-exp (if (list? (car array-elem)) '(array) (append stars $1))
-                             (make-array (car array-elem) stars)
-                             (cadr array-elem)
-                             (last array-elem))
-              array-elem))
+        ;; 埋もれているIDを見つける関数
+        (define (find-id str)
+          (cond ((stx:array-exp? str)
+                 (find-id (stx:array-exp-name str)))
+                ((list? str)
+                 (find-id (car str)))
+                (else str)))
+        ;; 構造を反転させる関数
+        ;; 多次元のarrayのtypeは'undefを取る(意味解析で調べる)
+        (define (reverse-parse str init)
+          ;; id や (id * ... *) ならば#tを返す関数
+          (define (id? hoge)
+            (cond ((stx:array-exp? hoge) #f)
+                  ((list? hoge)
+                   (if (id? (car hoge)) #t #f))
+                  (else #t)))
+          (cond ((stx:array-exp? str)
+                 (let ([name (stx:array-exp-name str)]
+                       [size (stx:array-exp-size str)]
+                       [pos (stx:array-exp-pos str)])
+                 (if (id? init)
+                     (if (list? init)
+                         (reverse-parse
+                          name
+                          (stx:array-exp (cons $1 (cdr init)) (car init) size pos))
+                         (reverse-parse
+                          name
+                          (stx:array-exp $1 init size pos)))
+                     (reverse-parse
+                      name
+                      (stx:array-exp 'undef init size pos)))))
+                ((list? str)
+                     (reverse-parse
+                      (car str)
+                      (cons init (cdr str))))
+                (else init)))
+        ;; 宣言リストの本体
         (map (lambda (declr)
-               (stx:declar 
-                (if (list? (last declr))
-                    (stx:array-exp (if (list? (car (last declr))) '(array)
-                                       (append (filter (lambda (x) (eq? x '*)) declr) $1))
-                                   (make-array (car (last declr)) (filter (lambda (x) (eq? x '*)) declr))
-                                   (cadr (last declr))
-                                   (last (last declr)))
-                    (cons (append (filter (lambda (x) (eq? x '*)) declr)
-                                  $1)
-                          (last declr)))
-                $1-start-pos))
+               (stx:declar (reverse-parse declr (find-id declr)) $1-start-pos))
              $2))))
     ;; 宣言変数のリスト
     (declarator-list
@@ -148,17 +179,17 @@
     ;; 宣言変数
     (declarator
      ; <direct-declarator>
-     ((direct-declarator) `(,$1))
+     ((direct-declarator) $1)
      ; * <declarator>
-     ((* declarator) (append '(*) $2)))
+     ((* declarator) (cons $2 '(*)))
+     ; ( <declarator> )
+     ((LPAR declarator RPAR)  $2))
     ;; 宣言変数そのもの(ポインタを除いたID)
     (direct-declarator
      ; <identifier>
      ((ID) (cons $1 $1-start-pos))
      ; <direct-declarator> [ <constant> ]
-     ((direct-declarator LBBRA NUM RBBRA) `(,$1 ,$3 ,$3-start-pos))
-     ; ( <direct-declarator> ) [ <constant> ]
-     ((direct-declarator LBBRA NUM RBBRA) '...))
+     ((declarator LBBRA NUM RBBRA) (stx:array-exp 'undef $1 $3 $3-start-pos)))
     ;; 関数プロトタイプ宣言
     (function-prototype
      ; <type-specifier> <function-declarator> ;
@@ -311,59 +342,59 @@
     (assign-expr
      ; <logical-or-expr>
      ((logical-or-expr)
-      (cond ((stx:front-inct-exp? $1)
-             (let ((inctop (stx:front-inct-exp-op $1))
-                   (inctvar (stx:front-inct-exp-var $1))
-                   (inctpos (stx:front-inct-exp-pos $1)))
+      (cond ((front-inct-exp? $1)
+             (let ((inctop (front-inct-exp-op $1))
+                   (inctvar (front-inct-exp-var $1))
+                   (inctpos (front-inct-exp-pos $1)))
                (stx:assign-exp inctvar (stx:aop-exp inctop inctvar 1 inctpos) $1-start-pos inctpos)))
-            ((stx:back-inct-exp? $1)
-             (let ((inctop (stx:back-inct-exp-op $1))
-                   (inctvar (stx:back-inct-exp-var $1))
-                   (inctpos (stx:back-inct-exp-pos $1)))
+            ((back-inct-exp? $1)
+             (let ((inctop (back-inct-exp-op $1))
+                   (inctvar (back-inct-exp-var $1))
+                   (inctpos (back-inct-exp-pos $1)))
                (stx:assign-exp inctvar (stx:aop-exp inctop inctvar 1 inctpos) $1-start-pos inctpos)))
             (else $1)))
      ; <logical-or-expr> = <assign-expr>
      ((logical-or-expr = assign-expr)
-      (cond ((stx:front-inct-exp? $3)
-             (let ((inctop (stx:front-inct-exp-op $3))
-                   (inctvar (stx:front-inct-exp-var $3))
-                   (inctpos (stx:front-inct-exp-pos $3)))
+      (cond ((front-inct-exp? $3)
+             (let ((inctop (front-inct-exp-op $3))
+                   (inctvar (front-inct-exp-var $3))
+                   (inctpos (front-inct-exp-pos $3)))
                `(,(stx:assign-exp inctvar (stx:aop-exp inctop inctvar 1 inctpos) $1-start-pos inctpos)
                  ,(stx:assign-exp $1 inctvar $1-start-pos $2-start-pos))))
-            ((stx:back-inct-exp? $3)
-             (let ((inctop (stx:back-inct-exp-op $3))
-                   (inctvar (stx:back-inct-exp-var $3))
-                   (inctpos (stx:back-inct-exp-pos $3)))
+            ((back-inct-exp? $3)
+             (let ((inctop (back-inct-exp-op $3))
+                   (inctvar (back-inct-exp-var $3))
+                   (inctpos (back-inct-exp-pos $3)))
                `(,(stx:assign-exp $1 inctvar $1-start-pos $2-start-pos)
                  ,(stx:assign-exp inctvar (stx:aop-exp inctop inctvar 1 inctpos) $1-start-pos inctpos))))
             (else (stx:assign-exp $1 $3 $1-start-pos $2-start-pos))))
      ; <logical-or-expr> += <assign-expr>
      ((logical-or-expr += assign-expr)
-      (cond ((stx:front-inct-exp? $3)
-             (let ((inctop (stx:front-inct-exp-op $3))
-                   (inctvar (stx:front-inct-exp-var $3))
-                   (inctpos (stx:front-inct-exp-pos $3)))
+      (cond ((front-inct-exp? $3)
+             (let ((inctop (front-inct-exp-op $3))
+                   (inctvar (front-inct-exp-var $3))
+                   (inctpos (front-inct-exp-pos $3)))
                `(,(stx:assign-exp inctvar (stx:aop-exp inctop inctvar 1 inctpos) $1-start-pos inctpos)
                  ,(stx:assign-exp $1 (stx:aop-exp '+ $1 inctvar $2-start-pos) $1-start-pos $2-start-pos))))
-            ((stx:back-inct-exp? $3)
-             (let ((inctop (stx:back-inct-exp-op $3))
-                   (inctvar (stx:back-inct-exp-var $3))
-                   (inctpos (stx:back-inct-exp-pos $3)))
+            ((back-inct-exp? $3)
+             (let ((inctop (back-inct-exp-op $3))
+                   (inctvar (back-inct-exp-var $3))
+                   (inctpos (back-inct-exp-pos $3)))
              `(,(stx:assign-exp $1 (stx:aop-exp '+ $1 inctvar $2-start-pos) $1-start-pos $2-start-pos)
                ,(stx:assign-exp inctvar (stx:aop-exp inctop inctvar 1 inctpos) $1-start-pos inctpos))))
             (else (stx:assign-exp $1 (stx:aop-exp '+ $1 $3 $2-start-pos) $1-start-pos $2-end-pos))))
      ; <logical-or-expr> -= <assign-expr>
      ((logical-or-expr -= assign-expr)
-      (cond ((stx:front-inct-exp? $3)
-             (let ((inctop (stx:front-inct-exp-op $3))
-                   (inctvar (stx:front-inct-exp-var $3))
-                   (inctpos (stx:front-inct-exp-pos $3)))
+      (cond ((front-inct-exp? $3)
+             (let ((inctop (front-inct-exp-op $3))
+                   (inctvar (front-inct-exp-var $3))
+                   (inctpos (front-inct-exp-pos $3)))
                `(,(stx:assign-exp inctvar (stx:aop-exp inctop inctvar 1 inctpos) $1-start-pos inctpos)
                  ,(stx:assign-exp $1 (stx:aop-exp '- $1 inctvar $2-start-pos) $1-start-pos $2-start-pos))))
-            ((stx:back-inct-exp? $3)
-             (let ((inctop (stx:back-inct-exp-op $3))
-                   (inctvar (stx:back-inct-exp-var $3))
-                   (inctpos (stx:back-inct-exp-pos $3)))
+            ((back-inct-exp? $3)
+             (let ((inctop (back-inct-exp-op $3))
+                   (inctvar (back-inct-exp-var $3))
+                   (inctpos (back-inct-exp-pos $3)))
                `(,(stx:assign-exp $1 (stx:aop-exp '- $1 inctvar $2-start-pos) $1-start-pos $2-start-pos)
                  ,(stx:assign-exp inctvar (stx:aop-exp inctop inctvar 1 inctpos) $1-start-pos inctpos))))
             (else (stx:assign-exp $1 (stx:aop-exp '- $1 $3 $2-start-pos) $1-start-pos $2-end-pos)))))
@@ -428,9 +459,9 @@
      ; * <unary-expr>
      ((* unary-expr) (stx:deref-exp $2 $1-start-pos))
      ; ++ <unary-expr>
-     ((++ unary-expr) (stx:front-inct-exp '+ $2 $1-start-pos))
+     ((++ unary-expr) (front-inct-exp '+ $2 $1-start-pos))
      ; -- <unary-expr>
-     ((-- unary-expr) (stx:front-inct-exp '- $2 $1-start-pos)))
+     ((-- unary-expr) (front-inct-exp '- $2 $1-start-pos)))
     ;; 接尾演算
     (postfix-expr
      ; <primary-expr>
@@ -442,9 +473,9 @@
      ((ID LPAR argument-expression-list-opt RPAR)
       (stx:call-exp $1 $3 $1-start-pos $4-start-pos))
      ; <postfix-expr> ++
-     ((postfix-expr ++) (stx:back-inct-exp '+ $1 $2-start-pos))
+     ((postfix-expr ++) (back-inct-exp '+ $1 $2-start-pos))
      ; <postfix-expr> --
-     ((postfix-expr --) (stx:back-inct-exp '- $1 $2-start-pos)))
+     ((postfix-expr --) (back-inct-exp '- $1 $2-start-pos)))
     ;; ID・即値・(式)
     (primary-expr
      ; <identifier>
