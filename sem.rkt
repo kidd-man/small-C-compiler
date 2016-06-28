@@ -33,7 +33,7 @@
 
 ;;構文解析した抽象構文木->さらに意味解析をした抽象構文木
 ;;呼び出すごとに新たな環境を生成する
-(define (parse->sem parse env lev)
+(define (parse->sem ast env lev)
   ;; 局所関数群
   ;
   ; (* ... * . type) -> (pointer ... (pointer type))
@@ -64,22 +64,22 @@
                        (stx:array-exp-name par)))
                   (stx:array-exp-size par)))
           ((list? par)
-           (make-pointer (reverse par)))
+           (make-pointer par))
           (else par)))
   ;; 多次元配列の名前を発掘する関数
   (define (find-array-name array)
     (cond ((stx:array-exp? array)
            (find-array-name (stx:array-exp-name array)))
           ((list? array)
-           (find-array-name (car array)))
+           (find-array-name (last array)))
           (else array)))
   
   ;; 処理本体
-  (define (make-sem parse)
+  (define (make-sem ast)
     (cond
-      ((stx:declar? parse)
+      ((stx:declar? ast)
        (stx:declar
-           (let* ((dec (stx:declar-dec parse))
+           (let* ((dec (stx:declar-dec ast))
                   (namepos (if (equal? (car dec) 'undef)
                                (cdr (find-array-name (cdr dec))) ;;配列
                                (cddr dec)))                      ;;配列でない
@@ -131,19 +131,19 @@
                        (let ((new-obj (decl name lev 'var type)))
                          ;; 環境に新しいオブジェクトを追加してnameをnew-objに置き換える
                          (begin (set! env (extend-delta env name new-obj)) new-obj))))
-        (stx:declar-pos parse)))
-      ((stx:fun-prot? parse)
-       (let* ((name (stx:fun-prot-name parse))
-              ;(namepos (cddr parse))
-              (parms (stx:fun-prot-parms parse))
-              (type (fun (make-pointer-type (stx:fun-prot-type parse))
-                         (map (lambda (x) (make-pointer-type (caar x))) (stx:fun-prot-parms parse))))
+        (stx:declar-pos ast)))
+      ((stx:fun-prot? ast)
+       (let* ((name (stx:fun-prot-name ast))
+              ;(namepos (cddr ast))
+              (parms (stx:fun-prot-parms ast))
+              (type (fun (make-pointer-type (stx:fun-prot-type ast))
+                         (map (lambda (x) (make-pointer-type (caar x))) (stx:fun-prot-parms ast))))
               (obj (env name))
-              (tpos (stx:fun-prot-tpos parse))
-              (npos (stx:fun-prot-npos parse))
+              (tpos (stx:fun-prot-tpos ast))
+              (npos (stx:fun-prot-npos ast))
               (nline (position-line npos))
               (ncol (position-col npos)))
-         (stx:fun-prot (make-pointer-type (stx:fun-prot-type parse))
+         (stx:fun-prot (make-pointer-type (stx:fun-prot-type ast))
                        ;(decl name lev 'proto type)
                        (if obj
                            ;; エラー処理
@@ -153,9 +153,9 @@
                               ;; 型が一致しているか確認
                               (let ((old-type (fun-type (decl-type obj))) ;登録されている関数の型
                                     (old-paratypelist (fun-params (decl-type obj))) ;登録されている関数のパラメータの型の列
-                                    (new-type (make-pointer-type (stx:fun-prot-type parse))) ;新しく宣言した関数の型
+                                    (new-type (make-pointer-type (stx:fun-prot-type ast))) ;新しく宣言した関数の型
                                     (new-paratypelist (map (lambda (x) (make-pointer-type (caar x)))
-                                                           (stx:fun-prot-parms parse)))) ;新しく宣言した関数のパラメータの型の列
+                                                           (stx:fun-prot-parms ast)))) ;新しく宣言した関数のパラメータの型の列
                                 ;; 型が一致するかどうか
                                 (if (and (equal? old-type new-type) (equal? old-paratypelist new-paratypelist))
                                     ;; 型が一致した場合は環境になにもせずnameをnew-objで置き換える
@@ -170,8 +170,8 @@
                               ;; 型が一致しているか確認
                               (let ((old-type (fun-type (decl-type obj))) ;登録されている関の返り値数の型
                                     (old-paratypelist (fun-params (decl-type obj))) ;登録されている関数のパラメータの型の列
-                                    (new-type (stx:fun-prot-type parse)) ;新しく宣言した関数の返り値の型
-                                    (new-paratypelist (map caar (stx:fun-prot-parms parse)))) ;新しく宣言した関数のパラメータの型の列
+                                    (new-type (stx:fun-prot-type ast)) ;新しく宣言した関数の返り値の型
+                                    (new-paratypelist (map caar (stx:fun-prot-parms ast)))) ;新しく宣言した関数のパラメータの型の列
                                 ;; 型が一致するかどうか
                                 (if (and (equal? old-type new-type) (equal? old-paratypelist new-paratypelist))
                                     ;; 型が一致した場合は環境に何もせずnameをnew-objで置き換える
@@ -200,18 +200,18 @@
                        npos)))
       
       ;; 関数定義
-      ((stx:fun-def? parse)
-       (let* ((name (stx:fun-def-name parse))
-              (parms (stx:fun-def-parms parse))
-              (type (fun (make-pointer-type (stx:fun-def-type parse))
-                         (map (lambda (x) (make-pointer-type (caar x))) (stx:fun-def-parms parse))))
-              (body (stx:cmpd-stmt-stmts (stx:fun-def-body parse)))
+      ((stx:fun-def? ast)
+       (let* ((name (stx:fun-def-name ast))
+              (parms (stx:fun-def-parms ast))
+              (type (fun (make-pointer-type (stx:fun-def-type ast))
+                         (map (lambda (x) (make-pointer-type (caar x))) (stx:fun-def-parms ast))))
+              (body (stx:cmpd-stmt-stmts (stx:fun-def-body ast)))
               (obj (env name))
-              (tpos (stx:fun-def-tpos parse))
-              (npos (stx:fun-def-npos parse))
+              (tpos (stx:fun-def-tpos ast))
+              (npos (stx:fun-def-npos ast))
               (nline (position-line npos))
               (ncol (position-col npos)))
-         (stx:fun-def (make-pointer-type (stx:fun-def-type parse))
+         (stx:fun-def (make-pointer-type (stx:fun-def-type ast))
                       (if obj
                           ;; 既に名前が環境に登録されている場合
                           (cond
@@ -219,9 +219,9 @@
                             ((equal? (decl-kind obj) 'proto)
                              (let ((old-type (fun-type (decl-type obj))) ;登録されている関数返り値の型
                                    (old-paratypelist (fun-params (decl-type obj))) ;登録されている関数のパラメータの型の列
-                                   (new-type (make-pointer-type (stx:fun-def-type parse))) ;新しく宣言した関数返り値の型
+                                   (new-type (make-pointer-type (stx:fun-def-type ast))) ;新しく宣言した関数返り値の型
                                    (new-paratypelist (map (lambda (x) (make-pointer-type (caar x)))
-                                                          (stx:fun-def-parms parse)))) ;新しく宣言した関数のパラメータの型の列
+                                                          (stx:fun-def-parms ast)))) ;新しく宣言した関数のパラメータの型の列
                                ;; 型が一致するかどうか
                                (if (and (equal? old-type new-type) (equal? old-paratypelist new-paratypelist))
                                    ;; 型が一致した場合は環境書き込みnameをnew-objで置き換える
@@ -258,7 +258,7 @@
                       tpos
                       npos)))
       ;; パラメータと関数本体を一緒に見るための分岐
-      ((p-and-b? parse)
+      ((p-and-b? ast)
        (p-and-b
         (map (lambda (x)
                (let* ((type (make-pointer-type (caar x)))
@@ -282,37 +282,37 @@
                      (let ((new-obj (decl name lev 'parm type)))
                        (begin (set! env (extend-delta env name new-obj))
                               (cons (cons type tpos) (cons new-obj npos)))))))
-             (p-and-b-para parse))
+             (p-and-b-para ast))
         ;; body。voidはプロトタイプ宣言用
-        (if (void? (p-and-b-body parse)) (void)
-            (stx:cmpd-stmt (parse->sem (p-and-b-body parse) env (+ lev 1))))))
+        (if (void? (p-and-b-body ast)) (void)
+            (stx:cmpd-stmt (parse->sem (p-and-b-body ast) env (+ lev 1))))))
       ;; if文
-      ((stx:if-stmt? parse)
-       (let ((test (stx:if-stmt-test parse))
-             (tbody (stx:if-stmt-tbody parse))
-             (ebody (stx:if-stmt-ebody parse))
-             (pos (stx:if-stmt-pos parse)))
+      ((stx:if-stmt? ast)
+       (let ((test (stx:if-stmt-test ast))
+             (tbody (stx:if-stmt-tbody ast))
+             (ebody (stx:if-stmt-ebody ast))
+             (pos (stx:if-stmt-pos ast)))
          (stx:if-stmt (make-sem test)
                       (parse->sem tbody env lev)
                       (parse->sem ebody env lev)
                       pos)))
-      ((stx:while-stmt? parse)
-       (let ((test (stx:while-stmt-test parse))
-             (body (stx:while-stmt-body parse))
-             (pos (stx:while-stmt-pos parse)))
+      ((stx:while-stmt? ast)
+       (let ((test (stx:while-stmt-test ast))
+             (body (stx:while-stmt-body ast))
+             (pos (stx:while-stmt-pos ast)))
          (stx:while-stmt (make-sem test)
                          (parse->sem body env lev)
                          pos)))
-      ((stx:return-stmt? parse)
-       (let ((exp (stx:return-stmt-exp parse))
-             (pos (stx:return-stmt-pos parse)))
+      ((stx:return-stmt? ast)
+       (let ((exp (stx:return-stmt-exp ast))
+             (pos (stx:return-stmt-pos ast)))
          (stx:return-stmt (make-sem exp)
                           pos)))
-      ((stx:assign-exp? parse)
-       (let* ((var (stx:assign-exp-var parse))
-              (src (stx:assign-exp-src parse))
-              (vpos (stx:assign-exp-vpos parse))
-              (eqpos (stx:assign-exp-eqpos parse))
+      ((stx:assign-exp? ast)
+       (let* ((var (stx:assign-exp-var ast))
+              (src (stx:assign-exp-src ast))
+              (vpos (stx:assign-exp-vpos ast))
+              (eqpos (stx:assign-exp-eqpos ast))
               (line (position-line vpos))
               (col (position-col vpos))
               (msg "~a:~a: ~a: expression is not assignable"))
@@ -326,43 +326,43 @@
              (raise (name-resolve-error
                      (format msg line col ename)
                      (current-continuation-marks))))))
-      ((stx:log-exp? parse)
-       (let ((op (stx:log-exp-op parse))
-             (left (stx:log-exp-left parse))
-             (right (stx:log-exp-right parse))
-             (pos (stx:log-exp-pos parse)))
+      ((stx:log-exp? ast)
+       (let ((op (stx:log-exp-op ast))
+             (left (stx:log-exp-left ast))
+             (right (stx:log-exp-right ast))
+             (pos (stx:log-exp-pos ast)))
          (stx:log-exp op
                       (make-sem left)
                       (make-sem right)
                       pos)))
-      ((stx:rop-exp? parse)
-       (let ((op (stx:rop-exp-op parse))
-             (left (stx:rop-exp-left parse))
-             (right (stx:rop-exp-right parse))
-             (pos (stx:rop-exp-pos parse)))
+      ((stx:rop-exp? ast)
+       (let ((op (stx:rop-exp-op ast))
+             (left (stx:rop-exp-left ast))
+             (right (stx:rop-exp-right ast))
+             (pos (stx:rop-exp-pos ast)))
          (stx:rop-exp op
                       (make-sem left)
                       (make-sem right)
                       pos)))
-      ((stx:aop-exp? parse)
-       (let ((op (stx:aop-exp-op parse))
-             (left (stx:aop-exp-left parse))
-             (right (stx:aop-exp-right parse))
-             (pos (stx:aop-exp-pos parse)))
+      ((stx:aop-exp? ast)
+       (let ((op (stx:aop-exp-op ast))
+             (left (stx:aop-exp-left ast))
+             (right (stx:aop-exp-right ast))
+             (pos (stx:aop-exp-pos ast)))
          (stx:aop-exp op
                       (make-sem left)
                       (make-sem right)
                       pos)))
       ;; *
-      ((stx:deref-exp? parse)
-       (let ((arg (stx:deref-exp-arg parse))
-             (pos (stx:deref-exp-pos parse)))
+      ((stx:deref-exp? ast)
+       (let ((arg (stx:deref-exp-arg ast))
+             (pos (stx:deref-exp-pos ast)))
          (stx:deref-exp (make-sem arg)
                         pos)))
       ;; &
-      ((stx:addr-exp? parse)
-       (let* ((var (stx:addr-exp-var parse))
-              (pos (stx:addr-exp-pos parse))
+      ((stx:addr-exp? ast)
+       (let* ((var (stx:addr-exp-var ast))
+              (pos (stx:addr-exp-pos ast))
               (line (position-line pos))
               (col (position-col pos))
               (type (type-inspection var))
@@ -372,16 +372,16 @@
                            pos)
              (raise (name-resolve-error (format msg line col ename type)
                                         (current-continuation-marks))))))
-      ((stx:comma-exp? parse)
-       (let ((left (stx:comma-exp-left parse))
-             (right (stx:comma-exp-right parse))
-             (pos (stx:comma-exp-pos parse)))
+      ((stx:comma-exp? ast)
+       (let ((left (stx:comma-exp-left ast))
+             (right (stx:comma-exp-right ast))
+             (pos (stx:comma-exp-pos ast)))
          (stx:comma-exp (make-sem left)
                         (make-sem right)
                         pos)))
-      ((stx:var-exp? parse)
-       (let* ((name (stx:var-exp-var parse))
-              (pos (stx:var-exp-pos parse))
+      ((stx:var-exp? ast)
+       (let* ((name (stx:var-exp-var ast))
+              (pos (stx:var-exp-pos ast))
               (line (position-line pos))
               (col (position-col pos))
               (obj (env name)))
@@ -404,11 +404,11 @@
                   (raise (name-resolve-error (format msg line col ename name)
                                              (current-continuation-marks)))))
               pos)))
-      ((stx:call-exp? parse)
-       (let* ((name (stx:call-exp-tgt parse))
-              (args (stx:call-exp-args parse))
-              (npos (stx:call-exp-npos parse))
-              (ppos (stx:call-exp-ppos parse))
+      ((stx:call-exp? ast)
+       (let* ((name (stx:call-exp-tgt ast))
+              (args (stx:call-exp-args ast))
+              (npos (stx:call-exp-npos ast))
+              (ppos (stx:call-exp-ppos ast))
               (line (position-line npos))
               (col (position-col npos))
               (obj (env name)))
@@ -437,19 +437,24 @@
           (map (lambda (x) (cons (make-sem (car x)) (cdr x))) args)
           npos
           ppos)))
-      ((stx:print-stmt? parse)
-       (let ((exp (stx:print-stmt-exp parse)))
-         (stx:print-stmt (make-sem exp))))
-      (else parse)))
+      ((stx:cast-exp? ast)
+       (let ((src (stx:cast-exp-src ast))
+             (type (stx:cast-exp-type ast))
+             (pos (stx:cast-exp-pos ast)))
+         (stx:cast-exp type (make-sem src) pos)))
+      ((stx:print-stmt? ast)
+       (let ((src (stx:print-stmt-exp ast)))
+         (stx:print-stmt (make-sem src))))
+      (else ast)))
   
    ;; 環境の参照先が変わらないための形式的本体
-   (cond ((stx:program? parse)
-          (stx:program (map make-sem (stx:program-declrs parse))))
-         ((stx:cmpd-stmt? parse)
-          (stx:cmpd-stmt (map make-sem (stx:cmpd-stmt-stmts parse))))
-         ((list? parse)
-          (map make-sem parse))
-         (else (make-sem parse))))
+   (cond ((stx:program? ast)
+          (stx:program (map make-sem (stx:program-declrs ast))))
+         ((stx:cmpd-stmt? ast)
+          (stx:cmpd-stmt (map make-sem (stx:cmpd-stmt-stmts ast))))
+         ((list? ast)
+          (map make-sem ast))
+         (else (make-sem ast))))
 
 
 ;; 型検査　
@@ -789,9 +794,25 @@
                fun-para-types
                (map car call-arg-types)
                (map cdr call-arg-types)))))))
+    ((stx:cast-exp? ast)
+     (let* ([src (type-inspection (stx:cast-exp-src ast))]
+            [type (stx:cast-exp-type ast)]
+            [pos (stx:cast-exp-pos ast)]
+            [line (position-line pos)]
+            [col (position-col pos)]
+            [msg "~a:~a: ~a: illigal cast type '~a'"]
+            [worn "~a:~a: worning: cast from '~a' to '~a'\n"])
+       (cond
+         ((and (equal? src 'float) (equal? type 'int))
+          (eprintf (format worn line col src type))
+          type)
+         ((equal? type 'void)
+          (raise (type-inspect-error (format msg line col etype type)
+                                     (current-continuation-marks))))
+         (else type))))
     ;; 即値
     (else (cond ((exact-integer? ast) 'int)
-                ((flonum? ast)        'float)
+                ((flonum? ast) 'float)
                 (else ast)))))
 
   
@@ -802,12 +823,14 @@
                   [type-inspect-error? (lambda (e) (begin (eprintf (exn-message e))))])
     (let ((sem-program
            (parse->sem (stx:program
-            (append `(,(stx:fun-prot 'void
-                                    'print
-                                    (list (list* (cons 'int (position 0 0 0)) 'v (position 0 0 0)))
-                                    (position 0 0 0)
-                                    (position 0 0 0)))
-                    (stx:program-declrs parse))) initial-delta 0)))
+                        (append `(,(stx:fun-prot 'void
+                                                 'print
+                                                 (list (list* (cons 'int (position 0 0 0)) 'v (position 0 0 0)))
+                                                 (position 0 0 0)
+                                                 (position 0 0 0)))
+                                (stx:program-declrs parse)))
+                       initial-delta
+                       0)))
       (begin (type-inspection sem-program)
              sem-program))))
 

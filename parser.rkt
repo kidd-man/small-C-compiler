@@ -149,17 +149,28 @@
                        [size (stx:array-exp-size str)]
                        [pos (stx:array-exp-pos str)])
                  (if (id? init)
-                     (reverse-parse
-                      name
-                      (stx:array-exp (append (cdr init) `(,$1))
-                                     (car init) size pos))
+                     ;; nameにidを含む配列の場合
+                     (if (list? init)
+                         ;; *が付いている場合
+                         (reverse-parse
+                          name
+                          (stx:array-exp (append (filter (lambda (x)
+                                                           (equal? x '*))
+                                                         init)
+                                                 `(,$1))
+                                     (last init) size pos))
+                         ;; *が付いていない場合
+                         (reverse-parse
+                          name
+                          (stx:array-exp $1 init size pos)))
+                     ;; nameにidを含まない場合
                      (reverse-parse
                       name
                       (stx:array-exp 'undef init size pos)))))
                 ((list? str)
                      (reverse-parse
                       (car str)
-                      (cons init (cdr str))))
+                      (append (cdr str) `(,init))))
                 (else init)))
         ;; 宣言リストの本体
         (map (lambda (declr)
@@ -183,7 +194,6 @@
      ; <declarator-list> , <declarator>
      ((declarator-list COMMA declarator)
       (append $1 `(,$3))))
-    ;; カッコつき宣言変数
     ;; 宣言変数
     (declarator
      ; <direct-declarator>
