@@ -29,14 +29,30 @@
 ; 複文: {<decls> <stmts>}
 (struct cmpd-stmt (decls stmts) #:transparent) ; decls は var-decl のリスト,stmts は文のリスト
  
-; ; 式
-; 変数参照
-(struct var-exp (var) #:transparent)
-; 整数即値
-(struct lit-exp (val) #:transparent)
-; 算術演算
-(struct aop-exp (op left right) #:transparent)
-; 比較演算
-(struct rop-exp (op left right) #:transparent)
+;; int用の式
+; 変数参照: *<var>
+(struct vari-exp (var)           #:transparent)
+; 整数即値: <val>
+(struct liti-exp (val)           #:transparent)
+; 算術演算: <left> <op> <right>
+(struct aopi-exp (op left right) #:transparent)
+; 比較演算: <left> <op> <right>
+(struct ropi-exp (op left right) #:transparent)
 ; アドレス取得: &<var>
-(struct addr-exp (var) #:transparent)
+(struct addri-exp (var)          #:transparent)
+; intへのキャスト: (int) <src>
+(struct casti-exp (src)          #:transparent)
+
+;; float用の式
+; 変数参照: *<var>
+(struct varf-exp (var)           #:transparent)
+; 整数即値: <val>
+(struct litf-exp (val)           #:transparent)
+; 算術演算: <left> <op> <right>
+(struct aopf-exp (op left right) #:transparent)
+; 比較演算: <left> <op> <right>
+(struct ropf-exp (op left right) #:transparent)
+; アドレス取得: &<var>
+(struct addrf-exp (var)          #:transparent)
+; floatへのキャスト: (float) <src>
+(struct castf-exp (src)          #:transparent)
