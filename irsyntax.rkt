@@ -30,7 +30,7 @@
 (struct cmpd-stmt (decls stmts) #:transparent) ; decls は var-decl のリスト,stmts は文のリスト
  
 ;; int用の式
-; 変数参照: *<var>
+; 変数参照: <var>
 (struct vari-exp (var)           #:transparent)
 ; 整数即値: <val>
 (struct liti-exp (val)           #:transparent)
@@ -44,7 +44,7 @@
 (struct casti-exp (src)          #:transparent)
 
 ;; float用の式
-; 変数参照: *<var>
+; 変数参照: <var>
 (struct varf-exp (var)           #:transparent)
 ; 整数即値: <val>
 (struct litf-exp (val)           #:transparent)

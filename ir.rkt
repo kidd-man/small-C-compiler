@@ -2,6 +2,7 @@
 (require (prefix-in stx: "syntax.rkt")
          (prefix-in ir: "irsyntax.rkt")
          (prefix-in sem: "sem.rkt")
+         "parser.rkt"
          "sem.rkt"
          parser-tools/lex)
 (provide (all-defined-out))
@@ -246,10 +247,16 @@
        (if (not (equal? 'float (sem:type-inspection src)))
            ;; int型 --> float型 
            `(,@(ir-exp (sem:decl t 0 'var 'tempi) src)
-             ,(ir:casti-exp (sem:decl t 0 'var 'tempi)))
+             ,(ir:casti-exp (sem:decl t 0 'var 'tempi))
+             ,(ir:assign-stmt
+               var
+               (ir:vari-exp (sem:decl t 0 'var 'tempi))))
            ;; float型 --> int型
            `(,@(ir-exp (sem:decl t 0 'var 'tempf) src)
-              ,(ir:castf-exp (sem:decl t 0 'var 'tempf))))))
+              ,(ir:castf-exp (sem:decl t 0 'var 'tempf))
+              ,(ir:assign-stmt
+                var
+                (ir:vari-exp (sem:decl t 0 'var 'tempf)))))))
     ;; param,args
     ((list? exp)
      (if (or (null? var) (null? exp))
@@ -284,7 +291,7 @@
                      (ir-stmt cmpd-stmts
                               (append decls (ir-stmt cmpd-decls decls))))))
     
-    ;; IF文 ;完成
+    ;; IF文
     ((stx:if-stmt? sem)
      (let ([t (fresh-symbol)]
            [l1 (fresh-label)]
@@ -337,12 +344,12 @@
                            (stx:deref-exp-arg (stx:assign-exp-var sem)))
                  ,@(ir-exp (sem:decl t2 0 'var 'tempi) (stx:assign-exp-src sem))
                  ,(ir:write-stmt (sem:decl t1 0 'var 'tempi)
-                                 (sem:decl t2 0 'var 'tempf)))
+                                 (ir:vari-exp (sem:decl t2 0 'var 'tempi))))
                `(,@(ir-exp (sem:decl t1 0 'var 'tempi)
                            (stx:deref-exp-arg (stx:assign-exp-var sem)))
                  ,@(ir-exp (sem:decl t2 0 'var 'tempf) (stx:assign-exp-src sem))
-                 ,(ir:write-stmt (sem:decl t1 0 'var 'tempi)
-                                 (sem:decl t2 0 'var 'tempf)))))
+                 ,(ir:write-stmt (sem:decl t1 0 'var 'tempf)
+                                 (ir:varf-exp (sem:decl t2 0 'var 'tempf))))))
          ;; x = <exp>
          (ir-exp (stx:assign-exp-var sem) (stx:assign-exp-src sem))))
     ((list? sem)
