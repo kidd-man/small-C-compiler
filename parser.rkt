@@ -135,11 +135,11 @@
                 ((list? str)
                  (find-id (car str)))
                 (else str)))
-        ;; id や (id * ... *) ならば#tを返す関数
+        ;; id や (* ... * id) ならば#tを返す関数
           (define (id? hoge)
             (cond ((stx:array-exp? hoge) #f)
                   ((list? hoge)
-                   (if (id? (car hoge)) #t #f))
+                   (if (id? (last hoge)) #t #f))
                   (else #t)))
         ;; 構造を反転させる関数
         ;; 多次元のarrayのtypeは'undefを取る(意味解析で調べる)
@@ -148,29 +148,30 @@
                  (let ([name (stx:array-exp-name str)]
                        [size (stx:array-exp-size str)]
                        [pos (stx:array-exp-pos str)])
-                 (if (id? init)
-                     ;; nameにidを含む配列の場合
-                     (if (list? init)
-                         ;; *が付いている場合
-                         (reverse-parse
-                          name
-                          (stx:array-exp (append (filter (lambda (x)
-                                                           (equal? x '*))
-                                                         init)
-                                                 `(,$1))
-                                     (last init) size pos))
-                         ;; *が付いていない場合
-                         (reverse-parse
-                          name
-                          (stx:array-exp $1 init size pos)))
-                     ;; nameにidを含まない場合
-                     (reverse-parse
-                      name
-                      (stx:array-exp 'undef init size pos)))))
+                   (if (id? init)
+                       ;; 最初の場合
+                       (if (list? str)
+                           ;; *が付いている場合
+                           (reverse-parse
+                            name
+                            (stx:array-exp
+                             (append (filter (lambda (x)
+                                               (equal? x '*))
+                                             init)
+                                     `(,$1))
+                             (last init) size pos))
+                           ;; *が付いていない場合
+                           (reverse-parse
+                            name
+                            (stx:array-exp $1 init size pos)))
+                       ;;最初でない場合
+                       (reverse-parse
+                        name
+                        (stx:array-exp 'undef init size pos)))))
                 ((list? str)
-                     (reverse-parse
-                      (car str)
-                      (append (cdr str) `(,init))))
+                 (reverse-parse
+                  (car str)
+                  (append (cdr str) `(,init))))
                 (else init)))
         ;; 宣言リストの本体
         (map (lambda (declr)
@@ -339,11 +340,11 @@
     ;; 文のリスト
     (statement-list
      ; <statement>
-     ((statement) (stx:cmpd-stmt (if (stx:cmpd-stmt? $1) (stx:cmpd-stmt-stmts $1) `(,$1)))) ;; `(,@(...))
+     ((statement) (stx:cmpd-stmt (if (stx:cmpd-stmt? $1) (stx:cmpd-stmt-stmts $1) `(,$1))))
      ; <statement-list> <statement>
      ((statement-list statement)
       (stx:cmpd-stmt (if (stx:cmpd-stmt? $2)
-                         (append (stx:cmpd-stmt-stmts $1) (stx:cmpd-stmt-stmts $2)) ;; `(,@(...))
+                         (append (stx:cmpd-stmt-stmts $1) (stx:cmpd-stmt-stmts $2))
                          (append (stx:cmpd-stmt-stmts $1) `(,$2))))))
     ;; 式のオプショナル
     (expression-opt
@@ -482,6 +483,7 @@
      ((++ unary-expr) (front-inct-exp '+ $2 $1-start-pos))
      ; -- <unary-expr>
      ((-- unary-expr) (front-inct-exp '- $2 $1-start-pos))
+     ; ( <type-specifier> ) <unary-expr>
      ((LPAR type-specifier RPAR unary-expr) (stx:cast-exp $2 $4 $1-start-pos)))
     ;; 接尾演算
     (postfix-expr

@@ -49,6 +49,7 @@
   ;; 配列を構造体に変換する関数
   ;; 配列に紛れたポインタも処理する
   (define (make-type-struct par)
+    ;; ポインタを構造体にする関数
     ;; (list * ... * obj) -> (pointer ... (pointer obj))
     (define (make-pointer list)
       (if (equal? (length list) 1)
@@ -58,9 +59,9 @@
     (define (id? hoge)
       (cond ((stx:array-exp? hoge) #f)
             ((list? hoge)
-             (if (id? (car hoge)) #t #f))
+             (if (id? (last hoge)) #t #f))
             (else #t)))
-    ;; 本体
+    ;; 構造体に置き換える
     (cond ((stx:array-exp? par)
            (array (make-type-struct
                    (if (id? (stx:array-exp-name par))
@@ -79,7 +80,7 @@
            (find-array-name (last array)))
           (else array)))
   ;---------------------------------------------------------------
-  ;; 処理本体
+  ;; 解析・木の分解・再構築
   (define (make-sem ast)
     (cond
       ;; 変数宣言
@@ -378,7 +379,7 @@
               [msg "~a:~a: ~a: expression is not assignable"])
          (if (or (stx:deref-exp? var)
                  (stx:var-exp? var))
-             ;; *<var> または <var>のときはok (arrayの除外は型検査で)
+             ;; *<exp> または <var>のときはok (arrayの除外は型検査で)
              (stx:assign-exp (make-sem var)
                              (make-sem src)
                              vpos
@@ -724,11 +725,17 @@
                    [rmsg (string-append
                           "~a:~a: ~a: missmatch return statement"
                           " type for function ('~a' for '~a')")])
-              (if (equal? ftype rtype) #t
-                  ;; エラー
-                  (raise (type-inspect-error
-                          (format rmsg rline rcol etype rtype ftype)
-                          (current-continuation-marks))))))
+              (if (equal? ftype 'void)
+                  (if (null? rtype) #t
+                      ;;エラー
+                      (raise (type-inspect-error
+                              (format rmsg rline rcol etype rtype ftype)
+                              (current-continuation-marks))))
+                  (if (equal? ftype rtype) #t
+                      ;; エラー
+                      (raise (type-inspect-error
+                              (format rmsg rline rcol etype rtype ftype)
+                              (current-continuation-marks)))))))
           (returns-type-set return-set))　#t)))
     
     ;; if: testと２つのbodyを見る
@@ -836,7 +843,7 @@
                            (type-inspection src)))
               (type-inspection var))
              ;; varがvar-expであり、
-             ;; srcがvar-expであり、arrayでで、arrayをpointerに
+             ;; srcがvar-expであり、arrayで、arrayをpointerに
              ;; 変えたものと左辺の型が一致する場合
              ((and (stx:var-exp? (find-deref-arg var))
                    (array? (type-inspection src))
