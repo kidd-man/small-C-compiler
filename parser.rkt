@@ -133,7 +133,7 @@
           (cond ((stx:array-exp? str)
                  (find-id (stx:array-exp-name str)))
                 ((list? str)
-                 (find-id (car str)))
+                 (find-id (last str)))
                 (else str)))
         ;; id や (* ... * id) ならば#tを返す関数
           (define (id? hoge)
@@ -170,11 +170,12 @@
                         (stx:array-exp 'undef init size pos)))))
                 ((list? str)
                  (reverse-parse
-                  (car str)
-                  (append (cdr str) `(,init))))
+                  (last str)
+                  (append (cdr (reverse str)) `(,init))))
                 (else init)))
         ;; 宣言リストの本体
         (map (lambda (declr)
+               (display declr) (newline)
                (stx:declar
                 (cons
                  ;; 宣言の型: 配列はundef(意味解析で調べる)
@@ -201,8 +202,8 @@
      ((direct-declarator) $1)
      ; * <declarator>
      ((* declarator) (if (list? $2)
-                         (append $2 '(*))
-                         (cons $2 '(*))))
+                         (cons '* $2)
+                         (cons '* `(,$2))))
      ; ( <declarator> )
      ((LPAR declarator RPAR)  $2))
     ;; 宣言変数そのもの(ポインタを除いたID)
