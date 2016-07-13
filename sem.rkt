@@ -31,6 +31,30 @@
 (define etype "type inspection error")
 (define eform "expression form error")
 
+;; 型のエラー表示用関数
+(define (disp-p type)
+  (define (make-string now-type last-is-*? acc)
+    (cond ((pointer? now-type)
+           (make-string
+            (pointer-type now-type)
+            #t
+            (string-append "*" acc)))
+          ((array? now-type)
+           (let ([size (array-size now-type)])
+             (if last-is-*?
+                 (make-string
+                  (array-type now-type)
+                  #f
+                  (format "(~a)[~a]" acc size))
+                 (make-string
+                  (array-type now-type)
+                  #f
+                  (format "~a[~a]" acc size)))))
+          (else (if (equal? acc "")
+                    now-type
+                    (format "~a ~a" now-type acc)))))
+  (make-string type #f ""))
+
 ;********************************************************************
 
 ;;構文解析した抽象構文木->さらに意味解析をした抽象構文木
@@ -55,7 +79,7 @@
       (if (equal? (length list) 1)
           (make-type-struct (car list))
           (pointer (make-pointer (cdr list)))))
-    ;; id や (id * ... *) ならば#tを返す関数
+    ;; id や (* ... * id) ならば#tを返す関数
     (define (id? hoge)
       (cond ((stx:array-exp? hoge) #f)
             ((list? hoge)
@@ -63,11 +87,18 @@
             (else #t)))
     ;; 構造体に置き換える
     (cond ((stx:array-exp? par)
-           (array (make-type-struct
-                   (if (id? (stx:array-exp-name par))
-                       (stx:array-exp-type par)
-                       (stx:array-exp-name par)))
-                  (stx:array-exp-size par)))
+           (let ([name (stx:array-exp-name par)]
+                 [type (stx:array-exp-type par)]
+                 [size (stx:array-exp-size par)])
+           (array
+            (make-type-struct
+             (if (id? name)
+                 (if (list? name)
+                     (append (cdr (reverse name))
+                             `(,type))
+                     type)
+                 name))
+            size)))
           ((list? par)
            (make-pointer par))
           (else par)))
@@ -444,7 +475,7 @@
              (stx:addr-exp (make-sem var)
                            pos)
              (raise (name-resolve-error
-                     (format msg line col ename type)
+                     (format msg line col ename (disp-p type))
                      (current-continuation-marks))))))
       
       ;; コンマ演算: 何もしない
@@ -756,7 +787,7 @@
                                (returns-type-set ebody)))
            ;; それ以外はエラー
            (raise (type-inspect-error
-                   (format msg line col etype test)
+                   (format msg line col etype (disp-p test))
                    (current-continuation-marks))))))
     
     ;; while: testとbodyを見る
@@ -772,7 +803,7 @@
        (if (equal? test 'int)
            body
            (raise (type-inspect-error
-                   (format msg line col etype test)
+                   (format msg line col etype (disp-p test))
                    (current-continuation-marks))))))
     
     ;; リターン: returnを集める集合で返す（cdr部はpos）
@@ -831,11 +862,12 @@
                          (decl-type (stx:var-exp-var src))))))
               (type-inspection var))
              ;; それ以外はエラー
-             (else (raise (expression-form-error
-                           (format msg line col etype
-                                   (type-inspection src)
-                                   (type-inspection var))
-                           (current-continuation-marks)))))
+             (else (raise
+                    (expression-form-error
+                     (format msg line col etype
+                             (disp-p (type-inspection src))
+                             (disp-p (type-inspection var)))
+                     (current-continuation-marks)))))
            ;; deref-expの場合
            (cond
              ;; 普通に型が一致する場合
@@ -852,8 +884,8 @@
               (type-inspection var))
              (else (raise (expression-form-error
                            (format msg line col etype
-                                   (type-inspection src)
-                                   (type-inspection var))
+                                   (disp-p (type-inspection src))
+                                   (disp-p (type-inspection var)))
                            (current-continuation-marks))))))))
     
     ;; 論理演算: &&,||
@@ -865,17 +897,20 @@
             [line (position-line pos)]
             [col (position-col pos)]
             [msg (string-append
-                  "~a:~a: ~a: comparison of distinct"
-                  " pointer types ('~a' and '~a')")])
+                  "~a:~a: ~a: comparison of illigal"
+                  " types ('~a' and '~a')\n"
+                  "expected: 'int' and 'int'")])
        
        (cond
          ;; &&,||:leftとrightがともにint型なら、int型がつく
          ((and (equal? left 'int) (equal? right 'int))
           'int)
-         ;; ともにintがつくなら、intがつく
+         ;; そうでなければエラー
          (else
           (raise (type-inspect-error
-                  (format msg line col etype left right)
+                  (format msg line col etype
+                          (disp-p left)
+                          (disp-p right))
                   (current-continuation-marks)))))))
     ;; 比較演算: >,<,>=,<=
     ((stx:rop-exp? ast)
@@ -887,7 +922,7 @@
             [col (position-col pos)]
             [msg (string-append
                   "~a:~a: ~a: comparison of distinct"
-                  " pointer types ('~a' and '~a')")])
+                  " types ('~a' and '~a')")])
        ;; 両辺が同じで int か float なら、int型がつく
        (if (and (equal? left right)
                 (or (equal? left 'int)
@@ -895,7 +930,9 @@
            'int
            ;;そうでなければエラー
            (raise (type-inspect-error
-                   (format msg line col etype left right)
+                   (format msg line col etype
+                           (disp-p left)
+                           (disp-p right))
                    (current-continuation-marks))))))
     ;; 四則演算
     ((stx:aop-exp? ast)
@@ -930,7 +967,9 @@
              left)
             ;; それ以外はエラー
             (else (raise (type-inspect-error
-                          (format msg line col etype left right)
+                          (format msg line col etype
+                                  (disp-p left)
+                                  (disp-p right))
                           (current-continuation-marks))))))
          ;; -の場合
          ((equal? op '-)
@@ -942,7 +981,9 @@
               left
               ;; それ以外はエラー
               (raise (type-inspect-error
-                      (format msg line col etype left right)
+                      (format msg line col etype
+                              (disp-p left)
+                              (disp-p right))
                       (current-continuation-marks)))))
          ;; *と/の場合
          (else
@@ -953,7 +994,9 @@
               ;; 左辺を返す
               left
               ;; それ以外はエラー
-              (error (format msg line col etype left right)))))))
+              (error (format msg line col etype
+                             (disp-p left)
+                             (disp-p right))))))))
     ;; アドレス参照 *
     ((stx:deref-exp? ast)
      (let* ([arg (type-inspection (stx:deref-exp-arg ast))]
@@ -971,7 +1014,8 @@
              ;;ポインタでも配列でもない場合はエラー
              (else
               (raise (type-inspect-error
-                      (format msg line col etype arg)
+                      (format msg line col etype
+                              (disp-p arg))
                       (current-continuation-marks)))))))
     ;; アドレス取得 &
     ((stx:addr-exp? ast)
@@ -1021,25 +1065,32 @@
                     (current-continuation-marks)))))
          ;; 引数の個数が一致している時
          (else
-          ;; 引数の型がすべて合ってるかどうか
-          (if (and (andmap equal? fun-para-types (map car call-arg-types))
-                   (andmap typed? call-arg-types))
-              ;; 引数の型が合っていれば返り値の型を返す
-              (fun-type (decl-type (stx:call-exp-tgt ast)))
-              ;; 引数の型が合ってない箇所がある場合
-              ;; どこがあってないか探してエラーを出す
-              (for-each
+          ;; 引数の型がすべて合ってるかどうか調べる
+          ;; 配列の場合は先頭をpointerに置き換えたものになら
+          ;; 代入することができる
+          (if (and (andmap
                (lambda (x y pos)
                  (let ([line (position-line pos)]
                        [col (position-col pos)])
-                   (if (equal? x y) (void) ;型が合うかどうか
-                       (raise (type-inspect-error
-                               (format msg line col etype y x)
-                               (current-continuation-marks))))))
+                   (cond
+                     ((equal? x y) #t) ;型が合うかどうか
+                     ((and (array? y)
+                           (equal? x
+                                   (pointer (array-type y))))
+                      #t)
+                     (else (raise (type-inspect-error
+                                   (format msg line col etype
+                                           (disp-p y)
+                                           (disp-p x))
+                                   (current-continuation-marks)))))))
                fun-para-types           ;関数定義の引数の型の列
                (map car call-arg-types) ;呼び出し側の引数の型の列
                (map cdr call-arg-types) ;呼び出し側の引数の位置情報の列
-               ))))))
+               )
+                   (andmap typed? call-arg-types))
+              ;; 引数の型が合っていれば返り値の型を返す
+              (fun-type (decl-type (stx:call-exp-tgt ast)))
+              #f)))))
     
     ;; キャスト
     ((stx:cast-exp? ast)
@@ -1048,20 +1099,26 @@
             [pos (stx:cast-exp-pos ast)]
             [line (position-line pos)]
             [col (position-col pos)]
-            [msg "~a:~a: ~a: illigal cast type '~a'"]
+            [vmsg "~a:~a: ~a: illigal cast type '~a'"]
+            [pmsg "~a:~a: ~a: pointer cannot be cast to type '~a'"]
             [worn "~a:~a: worning: '~a' is rounded down to cast into '~a'\n"])
        (cond
-         ;; float から int へのキャストは切り捨てになるので警告
+         ;; float から int へのキャスト：切り捨てになるので警告
          ((and (equal? src 'float) (equal? type 'int))
           (eprintf (format worn line col src type))
           type)
+         ;; int から float へのキャスト
+         ((and (equal? src 'int) (equal? type 'float))
+          type)
          ;; (void) はエラー
          ((equal? type 'void)
-          (raise (type-inspect-error (format msg line col etype type)
-                                     (current-continuation-marks))))
-         ;;それ以外ならキャストの型を返す
-         ;;(すでにキャストの中身srcの型検査は評価済なので)
-         (else type))))
+          (raise (type-inspect-error
+                  (format vmsg line col etype type)
+                  (current-continuation-marks))))
+         ;;それ以外ならポインタをキャストしてるのでエラー
+         (else (raise (type-inspect-error
+                       (format pmsg line col etype type)
+                       (current-continuation-marks)))))))
     
     ;; 即値
     (else (cond ((exact-integer? ast) 'int)

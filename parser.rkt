@@ -175,7 +175,6 @@
                 (else init)))
         ;; 宣言リストの本体
         (map (lambda (declr)
-               (display declr) (newline)
                (stx:declar
                 (cons
                  ;; 宣言の型: 配列はundef(意味解析で調べる)
