@@ -749,7 +749,8 @@
          ;; #tを返す。この時他のbodyも評価する。
          (for-each
           (lambda (x)
-            (let* ([rtype (car x)] ;returnの型
+            (let* ([rtype (if (null? (car x))
+                              'void (car x))] ;returnの型
                    [rpos (cdr x)]  ;returnの位置
                    [rline (position-line rpos)]
                    [rcol (position-col rpos)]
@@ -1133,6 +1134,8 @@
   (with-handlers ([name-resolve-error?
                    (lambda (e) (begin (eprintf (exn-message e))))]
                   [type-inspect-error?
+                   (lambda (e) (begin (eprintf (exn-message e))))]
+                  [expression-form-error?
                    (lambda (e) (begin (eprintf (exn-message e))))])
     ;; プログラムの埋め込み
     (let ([sem-program

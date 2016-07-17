@@ -87,11 +87,11 @@
        (cond
          ;; int型
          ((equal? ltype 'int)
-          `(,(ir-exp (sem:decl t 0 'var 'tempi) left)
+          `(,@(ir-exp (sem:decl t 0 'var 'tempi) left)
             ,@(ir-exp var (stx:comma-exp-right exp))))
          ;; float型
          ((equal? ltype 'float)
-          `(,(ir-exp (sem:decl t 0 'var 'tempf) left)
+          `(,@(ir-exp (sem:decl t 0 'var 'tempf) left)
             ,@(ir-exp var (stx:comma-exp-right exp))))
          (else 'unknown))))
     ;; 代入
@@ -114,7 +114,8 @@
                 ,@(ir-exp (sem:decl t2 0 'var 'tempf)
                           (stx:assign-exp-src exp))
                 ,(ir:write-stmt (sem:decl t1 0 'var 'tempf)
-                                (sem:decl t2 0 'var 'tempf))))))
+                                (sem:decl t2 0 'var 'tempf))))
+             (else 'unknown)))
          
          `(,@(ir-exp (stx:assign-exp-var exp)
                      (stx:assign-exp-src exp))
@@ -130,7 +131,7 @@
            [right (stx:rop-exp-right exp)]
            [t1 (fresh-symbol)]
            [t2 (fresh-symbol)])
-       (cond ((not (equal? (sem:type-inspection left) 'float))
+       (cond ((equal? (sem:type-inspection left) 'int)
               `(,@(ir-exp (sem:decl t1 0 'var 'tempi) (stx:rop-exp-left exp))
                 ,@(ir-exp (sem:decl t2 0 'var 'tempi) (stx:rop-exp-right exp))
                 ,(ir:assign-stmt
@@ -203,14 +204,16 @@
                (ir:aopi-exp op
                             (sem:decl t1 0 'var 'tempf)
                             (sem:decl t2 0 'var 'tempf))))))))
-       ((stx:deref-exp? exp)
-        (let ([t (fresh-symbol)])
-          `(,@(ir-exp (sem:decl t 0 'var 'tempi) (stx:deref-exp-arg exp))
-            ,(ir:read-stmt var (sem:decl t 0 'var 'tempi)))))
-       ((stx:addr-exp? exp)
-        (let ([t (fresh-symbol)])
-          (if (not (equal? 'float (sem:type-inspection exp)))
-              ;; int型
+    ;; 間接参照式
+    ((stx:deref-exp? exp)
+     (let ([t (fresh-symbol)])
+       `(,@(ir-exp (sem:decl t 0 'var 'tempi) (stx:deref-exp-arg exp))
+         ,(ir:read-stmt var (sem:decl t 0 'var 'tempi)))))
+    ;; アドレス取得
+    ((stx:addr-exp? exp)
+     (let ([t (fresh-symbol)])
+       (if (not (equal? 'float (sem:type-inspection exp)))
+           ;; int型
            `(,@(ir-exp (sem:decl t 0 'var 'tempi)
                        (stx:addr-exp-var exp))
              ,(ir:assign-stmt var (ir:addri-exp
@@ -244,25 +247,28 @@
             [line (position-line pos)]
             [col (position-col pos)])
        ;; int --> float か float --> int しかありえない
-       (if (not (equal? 'float (sem:type-inspection src)))
-           ;; int型 --> float型 
-           `(,@(ir-exp (sem:decl t 0 'var 'tempi) src)
-             ,(ir:casti-exp (sem:decl t 0 'var 'tempi))
-             ,(ir:assign-stmt
-               var
-               (ir:vari-exp (sem:decl t 0 'var 'tempi))))
+       (if (equal? 'float (sem:type-inspection src))
            ;; float型 --> int型
            `(,@(ir-exp (sem:decl t 0 'var 'tempf) src)
               ,(ir:castf-exp (sem:decl t 0 'var 'tempf))
               ,(ir:assign-stmt
                 var
-                (ir:vari-exp (sem:decl t 0 'var 'tempf)))))))
+                (ir:vari-exp (sem:decl t 0 'var 'tempf))))
+           ;; int型 --> float型 
+           `(,@(ir-exp (sem:decl t 0 'var 'tempi) src)
+             ,(ir:casti-exp (sem:decl t 0 'var 'tempi))
+             ,(ir:assign-stmt
+               var
+               (ir:vari-exp (sem:decl t 0 'var 'tempi)))))))
     ;; param,args
     ((list? exp)
      (if (or (null? var) (null? exp))
          '()
-         `(,@(ir-exp (car var) (car exp))
-           ,@(ir-exp (cdr var) (cdr exp)))))
+         (if (equal? (type-inspection (caar exp)) 'float)
+             `(,@(ir-exp (sem:decl (car var) 0 'var 'tempf) (caar exp))
+               ,@(ir-exp (cdr var) (cdr exp)))
+             `(,@(ir-exp (sem:decl (car var) 0 'var 'tempi) (caar exp))
+               ,@(ir-exp (cdr var) (cdr exp))))))
     ;; 数値
     (else
      (if (exact-integer? exp)
@@ -274,22 +280,32 @@
 ;; 文を中間構文に変換する関数
 (define (ir-stmt sem decls)
   (cond
+    ;; プログラム
     ((stx:program? sem)
      `(,@(ir-stmt (stx:program-declrs sem) decls)))
+    ;; グローバル変数
     ((stx:declar? sem) `(,(ir:var-decl (stx:declar-dec sem))))
+    ;; 関数プロトタイプ宣言
     ((stx:fun-prot? sem) `())
+    ;; 関数定義
     ((stx:fun-def? sem)
-     `(,(ir:fun-def (stx:fun-def-name sem)
-                 (stx:fun-def-parms sem)
-                 (ir-stmt (stx:fun-def-body sem) decls))))
+     (let ([name  (stx:fun-def-name sem)]
+           [parms (map (lambda (x) (cadr x))
+                       (stx:fun-def-parms sem))]
+           [body  (stx:fun-def-body sem)])
+     `(,(ir:fun-def name
+                    parms
+                    (ir-stmt body decls)))))
+    ;; 複文
     ((stx:cmpd-stmt? sem)
      (let ([cmpd-decls (filter stx:declar?
                                (stx:cmpd-stmt-stmts sem))]
            [cmpd-stmts (filter (compose1 not stx:declar?)
                                (stx:cmpd-stmt-stmts sem))])
-       (ir:cmpd-stmt (append decls (ir-stmt cmpd-decls decls))
-                     (ir-stmt cmpd-stmts
-                              (append decls (ir-stmt cmpd-decls decls))))))
+       (ir:cmpd-stmt
+        (append decls (ir-stmt cmpd-decls decls))
+        (ir-stmt cmpd-stmts
+                 (append decls (ir-stmt cmpd-decls decls))))))
     
     ;; IF文
     ((stx:if-stmt? sem)
@@ -305,6 +321,7 @@
        ,(ir:label-stmt l2)
        ,(ir-stmt (stx:if-stmt-ebody sem) decls)
        ,(ir:label-stmt l3))))
+    ;; WHILE文
     ((stx:while-stmt? sem)
      (let ([t (fresh-symbol)]
            [l1 (fresh-label)]
@@ -317,6 +334,7 @@
        ,(ir-stmt (stx:while-stmt-body sem) decls)
        ,(ir:goto-stmt l1)
        ,(ir:label-stmt l3))))
+    ;; RETURN文
     ((stx:return-stmt? sem)
      (let ([exp (stx:return-stmt-exp sem)]
            [t (fresh-symbol)])
@@ -325,39 +343,50 @@
              ,(ir:ret-stmt (sem:decl t 0 'var 'tempi)))
            `(,@(ir-exp (sem:decl t 0 'var 'tempf) exp)
              ,(ir:ret-stmt (sem:decl t 0 'var 'tempf))))))
+    ;; PRINT文
     ((stx:print-stmt? sem)
      (let ([exp (stx:print-stmt-exp sem)]
            [t (fresh-symbol)])
-       (if (not (equal? (sem:type-inspection exp)))
-           `(,@(ir-exp (sem:decl t 0 'var 'tempi) exp)
-             ,(ir:print-stmt (sem:decl t 0 'var 'tempi)))
+       (if (equal? (sem:type-inspection exp))
            `(,@(ir-exp (sem:decl t 0 'var 'tempf) exp)
-             ,(ir:print-stmt (sem:decl t 0 'var 'tempf))))))
+             ,(ir:print-stmt (sem:decl t 0 'var 'tempf)))
+           `(,@(ir-exp (sem:decl t 0 'var 'tempi) exp)
+             ,(ir:print-stmt (sem:decl t 0 'var 'tempi))))))
+    ;; 代入文
     ((stx:assign-exp? sem)
      (if (stx:deref-exp? (stx:assign-exp-var sem))
          ;; * <exp> = <exp>
          (let ([src (stx:assign-exp-src sem)]
                [t1 (fresh-symbol)]
                [t2 (fresh-symbol)])
-           (if (not (equal? 'float (sem:type-inspection exp)))
+           (if (equal? 'float (sem:type-inspection exp))
                `(,@(ir-exp (sem:decl t1 0 'var 'tempi)
                            (stx:deref-exp-arg (stx:assign-exp-var sem)))
-                 ,@(ir-exp (sem:decl t2 0 'var 'tempi) (stx:assign-exp-src sem))
-                 ,(ir:write-stmt (sem:decl t1 0 'var 'tempi)
-                                 (ir:vari-exp (sem:decl t2 0 'var 'tempi))))
+                 ,@(ir-exp (sem:decl t2 0 'var 'tempf)
+                           (stx:assign-exp-src sem))
+                 ,(ir:write-stmt
+                   (sem:decl t1 0 'var 'tempf)
+                   (ir:varf-exp (sem:decl t2 0 'var 'tempf))))
                `(,@(ir-exp (sem:decl t1 0 'var 'tempi)
                            (stx:deref-exp-arg (stx:assign-exp-var sem)))
-                 ,@(ir-exp (sem:decl t2 0 'var 'tempf) (stx:assign-exp-src sem))
-                 ,(ir:write-stmt (sem:decl t1 0 'var 'tempf)
-                                 (ir:varf-exp (sem:decl t2 0 'var 'tempf))))))
+                 ,@(ir-exp (sem:decl t2 0 'var 'tempi)
+                           (stx:assign-exp-src sem))
+                 ,(ir:write-stmt
+                   (sem:decl t1 0 'var 'tempi)
+                   (ir:vari-exp (sem:decl t2 0 'var 'tempi))))))
          ;; x = <exp>
          (ir-exp (stx:assign-exp-var sem) (stx:assign-exp-src sem))))
+    ;; プログラム用    
     ((list? sem)
      (if (null? sem)
          '()
          `(,@(ir-stmt (car sem) decls)
            ,@(ir-stmt (cdr sem) decls))))
-    (else (ir-exp (fresh-symbol) sem))))
+    ;; exp
+    (else
+     (if (equal? 'int (type-inspection sem))
+         (ir-exp (decl (fresh-symbol) 0 'var 'tempi) sem)
+         (ir-exp (decl (fresh-symbol) 0 'var 'tempf) sem)))))
 
 ;; 中間構文に変換する関数
 (define (ir ast) (ir-stmt ast '()))
