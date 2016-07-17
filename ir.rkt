@@ -51,7 +51,7 @@
                ,@(ir-exp var 0)
                ,(ir:label-stmt l5))))
           ((equal? op '&&)
-           (let ([e1 (sem:decl (fresh-symbol) 0 'var 'tempi)] ;; ||の両辺はint型のみ
+           (let ([e1 (sem:decl (fresh-symbol) 0 'var 'tempi)] ;; &&の両辺はint型のみ
                  [e2 (sem:decl (fresh-symbol) 0 'var 'tempi)]
                  [l1 (fresh-label)]
                  [l2 (fresh-label)]
