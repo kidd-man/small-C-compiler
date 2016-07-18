@@ -292,10 +292,11 @@
      (let ([name  (stx:fun-def-name sem)]
            [parms (map (lambda (x) (cadr x))
                        (stx:fun-def-parms sem))]
-           [body  (stx:fun-def-body sem)])
+           [body  (car (stx:fun-def-body sem))]
+           [delta (cdr (stx:fun-def-body sem))])
      `(,(ir:fun-def name
                     parms
-                    (ir-stmt body decls)))))
+                    (cons (ir-stmt body decls) delta)))))
     ;; 複文
     ((stx:cmpd-stmt? sem)
      (let ([cmpd-decls (filter stx:declar?
@@ -313,13 +314,16 @@
            [l1 (fresh-label)]
            [l2 (fresh-label)]
            [l3 (fresh-label)])
-     `(,@(ir-exp (sem:decl t 0 'var 'tempi) (stx:if-stmt-test sem))
+     `(,@(ir-exp (sem:decl t 0 'var 'tempi)
+                 (stx:if-stmt-test sem))
        ,(ir:if-stmt (sem:decl t 0 'var 'tempi) l1 l2)
        ,(ir:label-stmt l1)
-       ,(ir-stmt (stx:if-stmt-tbody sem) decls)
+       ,(cons (ir-stmt (car (stx:if-stmt-tbody sem)) decls)
+              (cdr (stx:if-stmt-tbody sem)))
        ,(ir:goto-stmt l3)
        ,(ir:label-stmt l2)
-       ,(ir-stmt (stx:if-stmt-ebody sem) decls)
+       ,(cons (ir-stmt (car (stx:if-stmt-ebody sem)) decls)
+              (cdr (stx:if-stmt-ebody sem)))
        ,(ir:label-stmt l3))))
     ;; WHILE文
     ((stx:while-stmt? sem)
@@ -328,10 +332,12 @@
            [l2 (fresh-label)]
            [l3 (fresh-label)])
      `(,(ir:label-stmt l1)
-       ,@(ir-exp (sem:decl t 0 'var 'tempi) (stx:while-stmt-test sem))
+       ,@(ir-exp (sem:decl t 0 'var 'tempi)
+                 (stx:while-stmt-test sem))
        ,(ir:if-stmt (sem:decl t 0 'var 'tempi) l2 l3)
        ,(ir:label-stmt l2)
-       ,(ir-stmt (stx:while-stmt-body sem) decls)
+       ,(cons (ir-stmt (car (stx:while-stmt-body sem)) decls)
+              (cdr (stx:while-stmt-body sem)))
        ,(ir:goto-stmt l1)
        ,(ir:label-stmt l3))))
     ;; RETURN文
@@ -389,5 +395,5 @@
          (ir-exp (decl (fresh-symbol) 0 'var 'tempf) sem)))))
 
 ;; 中間構文に変換する関数
-(define (ir ast) (ir-stmt ast '()))
+(define (ir ast) (cons (ir-stmt (car ast) '()) (cdr ast)))
 

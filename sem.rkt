@@ -272,7 +272,7 @@
               [type (fun (make-pointer-type (stx:fun-def-type ast))
                          (map (lambda (x) (make-pointer-type (caar x)))
                               (stx:fun-def-parms ast)))]
-              [body (stx:cmpd-stmt-stmts (stx:fun-def-body ast))]
+              [body (stx:fun-def-body ast)]
               [obj (env name)]
               [tpos (stx:fun-def-tpos ast)]
               [npos (stx:fun-def-npos ast)]
@@ -370,7 +370,7 @@
          (p-and-b-para ast))
         ;; body。voidはプロトタイプ宣言用
         (if (void? (p-and-b-body ast)) (void)
-            (stx:cmpd-stmt (parse->sem (p-and-b-body ast) env (+ lev 1))))))
+            (parse->sem (p-and-b-body ast) env (+ lev 1)))))
       
       ;; if文: そのまま
       ((stx:if-stmt? ast)
@@ -582,11 +582,11 @@
   ;; 環境の参照先が変わらないための形式的本体
   ;; 複文ごとに新たに環境を作る感じ
   (cond ((stx:program? ast)
-         (stx:program (map make-sem (stx:program-declrs ast))))
+         (cons (stx:program (map make-sem (stx:program-declrs ast))) env))
         ((stx:cmpd-stmt? ast)
-         (stx:cmpd-stmt (map make-sem (stx:cmpd-stmt-stmts ast))))
-        ((list? ast)
-         (map make-sem ast))
+         (cons (stx:cmpd-stmt (map make-sem (stx:cmpd-stmt-stmts ast))) env))
+;        ((list? ast)
+         ;(map make-sem ast))
         (else (make-sem ast))))
 
 ;********************************************************************
@@ -709,7 +709,7 @@
                            (cons (cons (make-pointer (caar x)) (cdar x))
                                  (cdr x)))
                          (stx:fun-def-parms ast))]
-            [return-set (type-inspection (stx:fun-def-body ast))]
+            [return-set (type-inspection (car (stx:fun-def-body ast)))]
             [fpos (stx:fun-def-tpos ast)]
             [fline (position-line fpos)]
             [fcol (position-col fpos)]
@@ -773,8 +773,8 @@
     ;; if: testと２つのbodyを見る
     ((stx:if-stmt? ast)
      (let* ([test (type-inspection (stx:if-stmt-test ast))]
-            [tbody (type-inspection (stx:if-stmt-tbody ast))]
-            [ebody (type-inspection (stx:if-stmt-ebody ast))]
+            [tbody (type-inspection (car (stx:if-stmt-tbody ast)))]
+            [ebody (type-inspection (car (stx:if-stmt-ebody ast)))]
             [pos (stx:if-stmt-pos ast)]
             [line (position-line pos)]
             [col (position-col pos)]
@@ -794,7 +794,7 @@
     ;; while: testとbodyを見る
     ((stx:while-stmt? ast)
      (let* ([test (type-inspection (stx:while-stmt-test ast))]
-            [body (type-inspection (stx:while-stmt-body ast))]
+            [body (type-inspection (car (stx:while-stmt-body ast)))]
             [pos (stx:while-stmt-pos ast)]
             [line (position-line pos)]
             [col (position-col pos)]
@@ -1152,5 +1152,5 @@
             initial-delta
             0)])
       ;;型検査をしてから意味解析後の構文木を得る
-      (begin (type-inspection sem-program)
+      (begin (type-inspection (car sem-program))
              sem-program))))
